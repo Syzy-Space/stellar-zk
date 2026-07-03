@@ -37,6 +37,11 @@ node "$ROOT/tools/emit-all-vkeys.js"
 # private_swap VK MUST be registered under `privswap` (not `private_swap`), or
 # private_swap's on-chain verify traps with a missing-VK unwrap.
 set_vk() { invoke "$VERIFIER_ID" set_vk --circuit "$1" --vk "$(cat "$ROOT/tools/vkeys/$2.vk.json")"; }
+# Set ALL three VKs: re-running the ceremony regenerates every zkey (including
+# shield), so the on-chain shield VK must be refreshed too or shield verify
+# returns false (Contract #3).
+echo "== set_vk shield =="
+set_vk shield shield
 echo "== set_vk unshield =="
 set_vk unshield unshield
 echo "== set_vk privswap (from private_swap vkey) =="

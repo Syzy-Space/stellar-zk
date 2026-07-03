@@ -189,3 +189,40 @@ syzy-shield sync                       # rebuild leaf mirror from on-chain event
 syzy-shield swap --side yes --amount 250000
 syzy-shield unshield --to new          # fresh, unlinked recipient
 ```
+
+---
+
+## Verified E2E — depth-8 pool (authoritative, 2026-07-04)
+
+Final, on-chain-verified `shield → private_swap → unshield` trio produced by the
+finished `syzy-shield` CLI. All three transactions confirmed `successful=true`
+on Horizon. Each carries a real BN254 Groth16 proof verified on-chain by the
+verifier contract. Full write-up: `cli/E2E.md`.
+
+| Field | Value |
+| --- | --- |
+| Pool (depth-8) | `CDLT5U3LIA2JPFDYC5AYMZGEAPET3TMQDN5UWA26ER5EVRBKPJDCY2MA` |
+| Verifier | `CA4HRBVEYSQDVVRRQAVVTKMRDJLM7WFRF7ZWV6Z6GBT4KNOSCNIYUU7X` |
+| XLM SAC (collateral) | `CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC` |
+| **shield** tx | `10a42d8f8a9e84c79c0a0c4c7c37d36839d8128c4e5dd860a9a117780082c475` |
+| **private_swap** tx | `4da5f1e6d18817ba270d29b817b1854af5ca1fdc57cb97484372401d6e65fac8` |
+| **unshield** tx | `0182ba4bd235e72a0ecc8701b21a5ec9aaa82905132e86f03c9c0d3fa692e3c2` |
+| Deposit account | `GCTFKIEFI4HTCLPTNSE2C7LZT2A47SARD4UWXF7PW7PUE33GJB4KJQYC` |
+| Fresh withdrawal account | `GBMB355KG5ILPOLTBG7VRDDBUULBJLOJA37UFOSAGLRW4G2QFCINDNTB` |
+
+Stellar Expert:
+- shield:       https://stellar.expert/explorer/testnet/tx/10a42d8f8a9e84c79c0a0c4c7c37d36839d8128c4e5dd860a9a117780082c475
+- private_swap: https://stellar.expert/explorer/testnet/tx/4da5f1e6d18817ba270d29b817b1854af5ca1fdc57cb97484372401d6e65fac8
+- unshield:     https://stellar.expert/explorer/testnet/tx/0182ba4bd235e72a0ecc8701b21a5ec9aaa82905132e86f03c9c0d3fa692e3c2
+
+Swap (integer constant product, side=yes ⇒ in=NO, out=YES): amountIn=250000,
+reserves 1000000/1000000 → 1250000/800000, amountOut=200000, change=750000;
+`1000000*1000000 == 1250000*800000` (both 1e12). Post-swap pool reserves
+(yes,no) = `800000 / 1250000`. Fresh withdrawal address ended with `10000.075`
+XLM (friendbot 10000 + 0.075 unshielded change) and has no on-chain link to the
+deposit account.
+
+Key bring-up fixes (see cli/E2E.md §"Engineering notes"): private_swap assetOut
+public input = `asset_out + 1` (note-scheme YES=1/NO=2); cached Merkle zeros +
+tree depth 20→8 to fit the Soroban CPU budget; verifier VK registered under the
+pool's `privswap` symbol; all three VKs refreshed after the ceremony re-run.

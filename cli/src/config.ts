@@ -14,9 +14,10 @@ function env(key: string, fallback: string): string {
 // --- Deployed testnet contracts (live) ---
 export const POOL_CONTRACT_ID = env(
   "SYZY_POOL_ID",
-  // Redeployed 2026-07-04: private_swap assetOut fix + cached Merkle zeros
-  // (CPU-budget critical) + privswap VK correctly wired on the verifier.
-  "CCQPWL5WCDMRXDHVP5HGH4KU7YPDKDNXR5KYGIDZPQWHAZFASQS5LZFH"
+  // Redeployed 2026-07-04 (depth-8): assetOut fix + cached zeros + depth-8 tree
+  // so private_swap's two on-chain inserts + verify fit the Soroban CPU budget;
+  // privswap VK wired under the correct symbol.
+  "CDLT5U3LIA2JPFDYC5AYMZGEAPET3TMQDN5UWA26ER5EVRBKPJDCY2MA"
 );
 export const VERIFIER_CONTRACT_ID = env(
   "SYZY_VERIFIER_ID",
