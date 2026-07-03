@@ -20,7 +20,7 @@ describe("private_swap", function () {
     const change = inAmount - amountIn;
     const outCommitment = H([assetOut, amountOut, ownerPk, rhoOut]);
     const changeCommitment = H([0, change, ownerPk, rhoChange]);
-    const { root, pathElements, pathIndices } = await singleLeafPath(inCommit, 20);
+    const { root, pathElements, pathIndices } = await singleLeafPath(inCommit, 8);
     const input = {
       root, nullifierIn, outCommitment, changeCommitment,
       reserveInBefore, reserveOutBefore, reserveInAfter, reserveOutAfter, assetOut,

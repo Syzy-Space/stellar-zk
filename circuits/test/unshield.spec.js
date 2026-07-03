@@ -12,7 +12,7 @@ describe("unshield", function () {
     const ownerPk = H([ownerSk]);
     const commitment = H([0, amount, ownerPk, rho]);
     const nullifier = H([ownerSk, rho, leafIndex]);
-    const { root, pathElements, pathIndices } = await singleLeafPath(commitment, 20);
+    const { root, pathElements, pathIndices } = await singleLeafPath(commitment, 8);
     const input = {
       root, nullifier, withdrawAmount: amount, recipient,
       ownerSk, rho, pathElements, pathIndices,
