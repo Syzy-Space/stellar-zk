@@ -14,7 +14,8 @@ function env(key: string, fallback: string): string {
 // --- Deployed testnet contracts (live) ---
 export const POOL_CONTRACT_ID = env(
   "SYZY_POOL_ID",
-  "CCGEYRCEB27GJ7PBMA4S7DJ3C2NMML4ZYOZR7HQQS3R376ZZI5AMVG2S"
+  // Redeployed 2026-07-04 with the private_swap assetOut public-input fix.
+  "CDOMFCJ2M25BBDAJB3657QYOLA43PRHXR62CHZS27CYRVZVAWZARMVDL"
 );
 export const VERIFIER_CONTRACT_ID = env(
   "SYZY_VERIFIER_ID",
@@ -44,6 +45,32 @@ export const SHIELD_ZKEY = env(
 export const SHIELD_VKEY = env(
   "SYZY_SHIELD_VKEY",
   path.join(REPO_ROOT, "circuits", "ceremony", "keys", "shield.vkey.json")
+);
+
+export const UNSHIELD_WASM = env(
+  "SYZY_UNSHIELD_WASM",
+  path.join(REPO_ROOT, "circuits", "build", "unshield_js", "unshield.wasm")
+);
+export const UNSHIELD_ZKEY = env(
+  "SYZY_UNSHIELD_ZKEY",
+  path.join(REPO_ROOT, "circuits", "ceremony", "keys", "unshield_final.zkey")
+);
+export const UNSHIELD_VKEY = env(
+  "SYZY_UNSHIELD_VKEY",
+  path.join(REPO_ROOT, "circuits", "ceremony", "keys", "unshield.vkey.json")
+);
+
+export const PRIVSWAP_WASM = env(
+  "SYZY_PRIVSWAP_WASM",
+  path.join(REPO_ROOT, "circuits", "build", "private_swap_js", "private_swap.wasm")
+);
+export const PRIVSWAP_ZKEY = env(
+  "SYZY_PRIVSWAP_ZKEY",
+  path.join(REPO_ROOT, "circuits", "ceremony", "keys", "private_swap_final.zkey")
+);
+export const PRIVSWAP_VKEY = env(
+  "SYZY_PRIVSWAP_VKEY",
+  path.join(REPO_ROOT, "circuits", "ceremony", "keys", "private_swap.vkey.json")
 );
 
 // Asset codes used by the note commitment scheme.
