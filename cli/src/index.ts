@@ -20,6 +20,17 @@ import {
   submitUnshield,
   submitPrivateSwap,
 } from "./chain";
+import {
+  buildShieldRelayXdr,
+  buildPrivateSwapRelayXdr,
+  buildUnshieldRelayXdr,
+} from "./chain";
+import { RELAYER_PUBLIC, BACKEND_URL } from "./config";
+import {
+  getMarkets,
+  relay as relayTx,
+  buildRelayPayload,
+} from "./api";
 import { toBE32 } from "./encode";
 import {
   Wallet,
@@ -50,6 +61,28 @@ function randFr(): bigint {
 
 function txLink(hash: string): string {
   return `https://stellar.expert/explorer/testnet/tx/${hash}`;
+}
+
+/**
+ * Resolve the relayer public key for a --relayer submit. Prefer the explicit
+ * SYZY_RELAYER_PUBLIC env; otherwise ask the running backend nothing (it never
+ * exposes its key) and fail with a clear message. The relayer account must be a
+ * funded testnet account whose SECRET the backend holds (SHIELDED_RELAYER_SECRET).
+ */
+function requireRelayerPublic(): string {
+  if (!RELAYER_PUBLIC) {
+    throw new Error(
+      "--relayer requires SYZY_RELAYER_PUBLIC (the backend relayer's G... address) " +
+        "so the tx can be built with the relayer as source. Set it to the public key " +
+        "of the backend's SHIELDED_RELAYER_SECRET account."
+    );
+  }
+  try {
+    Keypair.fromPublicKey(RELAYER_PUBLIC);
+  } catch {
+    throw new Error(`SYZY_RELAYER_PUBLIC is not a valid Stellar public key: ${RELAYER_PUBLIC}`);
+  }
+  return RELAYER_PUBLIC;
 }
 
 /** Rebuild the local Merkle tree from the mirrored leaves. */
@@ -162,6 +195,29 @@ program
     console.log(`NO:         ${bal[2]}`);
   });
 
+// --- markets -------------------------------------------------------------
+program
+  .command("markets")
+  .description("List shielded-pool markets from the running Syzy backend (/shielded/markets).")
+  .option("--json", "print raw JSON")
+  .action(async (opts) => {
+    const markets = await getMarkets();
+    if (opts.json) {
+      console.log(JSON.stringify(markets, null, 2));
+      return;
+    }
+    console.log(`Markets from ${BACKEND_URL}/shielded/markets:`);
+    if (markets.length === 0) {
+      console.log("  (none)");
+      return;
+    }
+    for (const m of markets) {
+      console.log(
+        `- ${m.id}\n    ${m.question}\n    yes=${m.yesReserve} no=${m.noReserve} price=${m.price}`
+      );
+    }
+  });
+
 // --- sync ----------------------------------------------------------------
 program
   .command("sync")
@@ -227,6 +283,11 @@ program
   .command("shield")
   .description("Deposit collateral into a new shielded note.")
   .requiredOption("--amount <n>", "collateral amount (i128 units)")
+  .option(
+    "--relayer",
+    "submit via the backend relayer (POST /shielded/relay): the RELAYER account " +
+      "is the tx source AND funds the collateral, so the user address never appears on-chain"
+  )
   .action(async (opts) => {
     const amount = BigInt(opts.amount);
     const wallet = loadWallet();
@@ -243,16 +304,44 @@ program
     // Public inputs: [amount(BE32), commitment(BE32)].
     const commitmentHex = proof.publicInputs[1];
 
-    console.log("Submitting shield tx...");
-    const hash = await submitShield(kp, {
-      from: kp.publicKey(),
-      a: proof.a,
-      b: proof.b,
-      c: proof.c,
-      amount,
-      commitment: commitmentHex,
-      screeningRef: ZERO32,
-    });
+    let hash: string;
+    if (opts.relayer) {
+      // Relayer path: the collateral is pulled from the relayer `from`, and the
+      // backend signs+submits. The user's Stellar address never appears on-chain.
+      const relayerPk = requireRelayerPublic();
+      console.log(`Building relayer-sourced shield XDR (source ${relayerPk})...`);
+      const txXdr = await buildShieldRelayXdr(relayerPk, {
+        from: relayerPk,
+        a: proof.a,
+        b: proof.b,
+        c: proof.c,
+        amount,
+        commitment: commitmentHex,
+        screeningRef: ZERO32,
+      });
+      const payload = buildRelayPayload({
+        circuit: "shield",
+        a: proof.a,
+        b: proof.b,
+        c: proof.c,
+        publicInputs: proof.publicInputs,
+        txXdr,
+      });
+      console.log(`Relaying via ${BACKEND_URL}/shielded/relay...`);
+      const res = await relayTx(payload);
+      hash = res.txHash;
+    } else {
+      console.log("Submitting shield tx...");
+      hash = await submitShield(kp, {
+        from: kp.publicKey(),
+        a: proof.a,
+        b: proof.b,
+        c: proof.c,
+        amount,
+        commitment: commitmentHex,
+        screeningRef: ZERO32,
+      });
+    }
     console.log(`shield tx: ${hash}`);
     console.log(txLink(hash));
 
@@ -280,6 +369,11 @@ program
   .description("Privately swap a collateral note into a YES/NO position note (+ change note).")
   .requiredOption("--side <yes|no>", "position to receive")
   .requiredOption("--amount <n>", "collateral to spend into the pool (amountIn)")
+  .option(
+    "--relayer",
+    "submit via the backend relayer (POST /shielded/relay): private_swap is fully " +
+      "proof-gated, so the RELAYER account is the tx source and no user address appears on-chain"
+  )
   .action(async (opts) => {
     const side = String(opts.side).toLowerCase();
     if (side !== "yes" && side !== "no") throw new Error("--side must be yes|no");
@@ -365,8 +459,7 @@ program
       reserveOutAfter,
     });
 
-    console.log("Submitting private_swap tx...");
-    const hash = await submitPrivateSwap(kp, {
+    const swapArgs = {
       a: proof.a,
       b: proof.b,
       c: proof.c,
@@ -379,7 +472,28 @@ program
       reserveOutAfter,
       assetOut: assetOutContract,
       fee: 0n,
-    });
+    };
+
+    let hash: string;
+    if (opts.relayer) {
+      const relayerPk = requireRelayerPublic();
+      console.log(`Building relayer-sourced private_swap XDR (source ${relayerPk})...`);
+      const txXdr = await buildPrivateSwapRelayXdr(relayerPk, swapArgs);
+      const payload = buildRelayPayload({
+        circuit: "private_swap",
+        a: proof.a,
+        b: proof.b,
+        c: proof.c,
+        publicInputs: proof.publicInputs,
+        txXdr,
+      });
+      console.log(`Relaying via ${BACKEND_URL}/shielded/relay...`);
+      const res = await relayTx(payload);
+      hash = res.txHash;
+    } else {
+      console.log("Submitting private_swap tx...");
+      hash = await submitPrivateSwap(kp, swapArgs);
+    }
     console.log(`private_swap tx: ${hash}`);
     console.log(txLink(hash));
 
@@ -432,6 +546,11 @@ program
   .description("Spend a collateral note and pay it out to a Stellar address.")
   .requiredOption("--to <address>", "recipient Stellar address (G...) or 'new' to mint a fresh one")
   .option("--amount <n>", "note amount to withdraw (defaults to the note amount)")
+  .option(
+    "--relayer",
+    "submit via the backend relayer (POST /shielded/relay): the RELAYER account " +
+      "is the tx source, so the user address never appears on-chain"
+  )
   .action(async (opts) => {
     const wallet = loadWallet();
     const kp = stellarKeypair(wallet);
@@ -494,8 +613,7 @@ program
       recipientField,
     });
 
-    console.log("Submitting unshield tx...");
-    const hash = await submitUnshield(kp, {
+    const unshieldArgs = {
       a: proof.a,
       b: proof.b,
       c: proof.c,
@@ -505,8 +623,35 @@ program
       recipient,
       recipientField: toBE32(recipientField),
       fee: 0n,
-    });
-    console.log(`unshield tx: ${hash}`);
+    };
+
+    let hash: string;
+    if (opts.relayer) {
+      // RELAYER PATH: unshield is proof-gated (no user require_auth), so build a
+      // tx whose SOURCE is the relayer account, serialize UNSIGNED to XDR, and
+      // POST it to the backend. The backend simulates, signs with its relayer
+      // key, and submits — the user's address never appears as the tx source.
+      const relayerPk = requireRelayerPublic();
+      console.log(`Building relayed unshield (source = relayer ${relayerPk})...`);
+      const txXdr = await buildUnshieldRelayXdr(relayerPk, unshieldArgs);
+      console.log(`Submitting to backend relayer at ${BACKEND_URL}/shielded/relay ...`);
+      const res = await relayTx(
+        buildRelayPayload({
+          circuit: "unshield",
+          a: proof.a,
+          b: proof.b,
+          c: proof.c,
+          publicInputs: proof.publicInputs,
+          txXdr,
+        })
+      );
+      hash = res.txHash;
+      console.log(`relayed unshield tx: ${hash}`);
+    } else {
+      console.log("Submitting unshield tx...");
+      hash = await submitUnshield(kp, unshieldArgs);
+      console.log(`unshield tx: ${hash}`);
+    }
     console.log(txLink(hash));
 
     markSpent(input.commitment);

@@ -269,6 +269,76 @@ export async function submitPrivateSwap(
 }
 
 /**
+ * Build an `unshield` invocation whose SOURCE is the relayer account, prepare it
+ * (simulate + assemble the Soroban resource footprint), and return the UNSIGNED
+ * transaction as base64 XDR. The backend `/shielded/relay` endpoint signs it
+ * with its dedicated relayer key and submits it, so the user's Stellar address
+ * never appears as the tx source.
+ *
+ * `unshield` is the clean relayer case: it is fully proof-gated and needs NO
+ * user `require_auth`, so no user signature or auth entry is required — only the
+ * relayer's signature (added server-side).
+ */
+export async function buildUnshieldRelayXdr(
+  relayerPublicKey: string,
+  args: UnshieldArgs
+): Promise<string> {
+  return buildRelayXdr(relayerPublicKey, "unshield", buildUnshieldArgs(args));
+}
+
+/**
+ * Build a relayer-sourced, prepared-but-UNSIGNED invocation of `method` on the
+ * pool contract and return it as base64 XDR. Shared by the shield/private_swap/
+ * unshield relayer paths: the backend `/shielded/relay` endpoint signs it with
+ * its dedicated relayer key and submits it, so no user address is the tx source.
+ *
+ * The relayer account is the SOURCE, so for `shield` the collateral is pulled
+ * from (and `from.require_auth()` is satisfied by) the relayer itself.
+ */
+export async function buildRelayXdr(
+  relayerPublicKey: string,
+  method: string,
+  callArgs: xdr.ScVal[]
+): Promise<string> {
+  const srv = server();
+  const contract = new Contract(POOL_CONTRACT_ID);
+  const account = await srv.getAccount(relayerPublicKey);
+
+  const tx = new TransactionBuilder(account, {
+    fee: "10000000", // 1 XLM ceiling; prepareTransaction sets the exact resource fee
+    networkPassphrase: NETWORK_PASSPHRASE,
+  })
+    .addOperation(contract.call(method, ...callArgs))
+    .setTimeout(120)
+    .build();
+
+  // Simulate + assemble the Soroban footprint/auth, but DO NOT sign — the
+  // backend relayer adds the only required signature.
+  const prepared = await srv.prepareTransaction(tx);
+  return prepared.toXDR();
+}
+
+/** Relayer-sourced `shield` XDR (collateral pulled from the relayer `from`). */
+export async function buildShieldRelayXdr(
+  relayerPublicKey: string,
+  args: ShieldArgs
+): Promise<string> {
+  return buildRelayXdr(relayerPublicKey, "shield", buildShieldArgs(args));
+}
+
+/** Relayer-sourced `private_swap` XDR (fully proof-gated, no user auth). */
+export async function buildPrivateSwapRelayXdr(
+  relayerPublicKey: string,
+  args: PrivateSwapArgs
+): Promise<string> {
+  return buildRelayXdr(
+    relayerPublicKey,
+    "private_swap",
+    buildPrivateSwapArgs(args)
+  );
+}
+
+/**
  * Scan the pool's contract events to reconstruct the ORDERED list of leaf
  * commitments inserted into the Merkle tree, so a client can rebuild the tree
  * and compute authentication paths even when OTHER clients also inserted.

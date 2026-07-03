@@ -28,6 +28,14 @@ export const COLLATERAL_SAC_ID = env(
   "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC"
 );
 
+// --- Backend integration (relayer path) ---
+// Base URL of the running Syzy backend that exposes /shielded/*.
+export const BACKEND_URL = env("SYZY_BACKEND_URL", "http://localhost:7788");
+// Public key of the backend's dedicated relayer account. Required for the
+// --relayer path: it becomes the tx SOURCE so no user address appears on-chain.
+// The backend holds the matching SECRET (SHIELDED_RELAYER_SECRET) and signs.
+export const RELAYER_PUBLIC = env("SYZY_RELAYER_PUBLIC", "");
+
 // --- Network ---
 export const RPC_URL = env("SYZY_RPC_URL", "https://soroban-testnet.stellar.org");
 export const NETWORK_PASSPHRASE = env(
