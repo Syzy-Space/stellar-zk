@@ -1,0 +1,20 @@
+{
+  "name": "syzy-shielded",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "mocha circuits/test/**/*.spec.js --timeout 100000"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "chai": "^4.5.0",
+    "circom_tester": "^0.0.20",
+    "circomlib": "^2.0.5",
+    "mocha": "^10.8.2",
+    "snarkjs": "^0.7.5"
+  }
+}

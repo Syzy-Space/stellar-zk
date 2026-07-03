@@ -1,0 +1,8 @@
+node_modules/
+circuits/build/
+circuits/ceremony/*.ptau
+circuits/ceremony/*.zkey
+!circuits/ceremony/*.vkey.json
+*.wtns
+*.r1cs
+*.sym
