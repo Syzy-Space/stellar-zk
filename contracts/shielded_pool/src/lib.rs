@@ -269,6 +269,8 @@ impl ShieldedPool {
     /// Public inputs for the `private_swap` circuit (ordering fixed by the circuit):
     ///   [root, nullifierIn, outCommitment, changeCommitment,
     ///    reserveInBefore, reserveOutBefore, reserveInAfter, reserveOutAfter, assetOut].
+    /// NB: the circuit's `assetOut` public input is the note-scheme asset id
+    /// (YES=1, NO=2), so we push `asset_out + 1` below.
     pub fn private_swap(
         env: Env,
         proof_a: BytesN<64>,
@@ -322,7 +324,11 @@ impl ShieldedPool {
         public_inputs.push_back(i128_to_fr_be(&env, reserve_out_before));
         public_inputs.push_back(i128_to_fr_be(&env, reserve_in_after));
         public_inputs.push_back(i128_to_fr_be(&env, reserve_out_after));
-        public_inputs.push_back(u32_to_fr_be(&env, asset_out));
+        // The circuit encodes the output-note asset as YES=1 / NO=2 (the
+        // note-scheme asset id), whereas this entrypoint's `asset_out` selector
+        // uses YES=0 / NO=1. Convert to the circuit's encoding for the public
+        // input so the on-chain verifier's pairing check matches the proof.
+        public_inputs.push_back(u32_to_fr_be(&env, asset_out + 1));
         verify(&env, &cfg, symbol_short!("privswap"), &proof_a, &proof_b, &proof_c, public_inputs);
 
         // Apply the new reserves (map in/out back to yes/no).
