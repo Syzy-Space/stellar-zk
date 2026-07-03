@@ -35,3 +35,23 @@ fn matches_circomlibjs_7_42() {
     let want = h("042ca87e7982bd63de6eeea526f89dbdf6d22fe4105bfa205b4c820bf1428988");
     assert_eq!(got, want, "got={}", hex::encode(got));
 }
+
+#[test]
+fn matches_circomlibjs_big() {
+    // poseidon([123456789, 987654321])
+    let left = h("00000000000000000000000000000000000000000000000000000000075bcd15"); // 123456789
+    let right = h("000000000000000000000000000000000000000000000000000000003ade68b1"); // 987654321
+    let got = poseidon2_be(&left, &right);
+    let want = h("2536d01521137bf7b39e3fd26c1376f456ce46a45993a5d7c3c158a450fd7329");
+    assert_eq!(got, want, "got={}", hex::encode(got));
+}
+
+#[test]
+fn matches_circomlibjs_near_modulus() {
+    // poseidon([r-1, 5]) — exercises inputs at the top of the field range.
+    let left = h("30644e72e131a029b85045b68181585d2833e84879b9709143e1f593f0000000"); // r-1
+    let right = h("0000000000000000000000000000000000000000000000000000000000000005");
+    let got = poseidon2_be(&left, &right);
+    let want = h("1ff8e93ee487329afb7616a1c69a641ae9a66f5fe65f06324d72408023ae5889");
+    assert_eq!(got, want, "got={}", hex::encode(got));
+}

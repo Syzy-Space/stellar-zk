@@ -8,10 +8,9 @@ crate-type = ["lib", "cdylib"]
 doctest = false
 
 [dependencies]
-soroban-sdk = { workspace = true, features = ["alloc"] }
-light-poseidon-nostd = { version = "0.4.1", default-features = false }
-ark-bn254 = { version = "0.5", default-features = false, features = ["curve"] }
-ark-ff = { version = "0.5", default-features = false }
+# Field arithmetic is hand-vendored (see src/field.rs): no ark, no light-poseidon,
+# no big-int crate. Keeps the wasm tiny and deployable to Soroban testnet.
+soroban-sdk = { workspace = true }
 
 [dev-dependencies]
 soroban-sdk = { workspace = true, features = ["testutils"] }
