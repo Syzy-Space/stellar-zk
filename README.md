@@ -12,12 +12,20 @@
   <img alt="License" src="https://img.shields.io/badge/license-ISC-lightgrey">
 </p>
 
+> **Private traders. Public price discovery. Verified on Stellar.**
+
 **Syzy Shielded** is a shielded pool for prediction markets: you deposit
 collateral, swap it into YES / NO outcome tokens through a constant-product AMM,
-and later withdraw — all while your identity and the link between your deposit
-and your withdrawal stay hidden. Value lives as Poseidon note commitments in an
-on-chain Merkle tree; spends are authorized by zk-SNARK proofs and protected
-against double-spend by nullifiers.
+and later withdraw — all while your **identity** and the **link between your
+deposit and your withdrawal** stay hidden, *and the AMM still produces a public
+price everyone can see*. Value lives as Poseidon note commitments in an on-chain
+Merkle tree; spends are authorized by zk-SNARK proofs and protected against
+double-spend by nullifiers.
+
+It is the privacy layer for **[Syzy](https://syzy.space)**, a live prediction
+market on Stellar **mainnet**. This repo is the **testnet proof-of-concept** of
+that layer — see [Honest scope](#honest-scope-this-is-a-hackathon-poc) for
+exactly what is real, mocked, and testnet-only.
 
 ### What the ZK is doing here (load-bearing, not decorative)
 
@@ -157,19 +165,35 @@ cd contracts && cargo test && cd ..
 # 4. deploy ONE fresh depth-8 pool, wire the verifier, set all 3 VKs, seed reserves
 bash contracts/scripts/deploy-pool-testnet.sh     # prints the pool contract id
 
-# 5. run the shielded flow end-to-end (each step lands a proof-gated tx)
+# 5. run the whole shielded flow end-to-end in one shot (each step lands a
+#    proof-gated tx; prints the three tx hashes + Stellar Expert links)
+cd cli && npm install
+npm run e2e                                        # == bash scripts/e2e-testnet.sh
+```
+
+Or drive the steps by hand (same flow, explicit):
+
+```bash
 cd cli && npm install && npm run build
 export SYZY_POOL_ID=<pool-id-from-step-4>          # or use the default in config.ts
 node dist/index.js init                            # create + friendbot-fund a wallet
-node dist/index.js shield  --amount 1000000
+node dist/index.js shield   --amount 1000000
 node dist/index.js sync                            # rebuild leaf mirror from on-chain events
-node dist/index.js swap    --side yes --amount 250000
-node dist/index.js unshield --to new               # fresh, unlinked recipient
+node dist/index.js swap     --side yes --amount 250000
+node dist/index.js sync
+node dist/index.js unshield --amount 750000 --to new   # fresh, unlinked recipient
 ```
 
 The pool/verifier/SAC defaults in [`cli/src/config.ts`](cli/src/config.ts) point
 at the live canonical deployment above, so steps 4–5 also work against the
-already-deployed pool without redeploying.
+already-deployed pool without redeploying. `npm run e2e` uses `npx tsx` and needs
+no separate build step. Full walk-through: [`cli/E2E.md`](cli/E2E.md).
+
+Proof generation runs **locally**: the note secrets and owner keys never leave
+the client. Submission defaults to direct testnet submit; an **optional relayer /
+NestJS backend module** can instead relay txs, serve market data, and store
+**encrypted viewing keys** for compliance-friendly auditability — none of it is
+required to run the flow above.
 
 ## Honest scope (this is a hackathon PoC)
 
@@ -188,9 +212,16 @@ The hackathon asks for honesty; here is exactly what is and isn't real:
   direction of *that individual swap* leak from the public reserve movement. Full
   size/direction hiding needs batched settlement (many trades share one reserve
   delta) — a production circuit, not built here.
+- **`recipient_field` binding gap.** On `unshield`, the contract does **not**
+  cryptographically bind the proof's `recipient_field` public input to the payout
+  `Address`. The CLI derives both from the same key and keeps them consistent, so
+  the demo is sound — but a production contract **must** enforce the binding
+  (otherwise a relayer could redirect the payout). Documented in
+  [`cli/E2E.md`](cli/E2E.md).
 - **Trusted setup is small.** A real multi-contributor Groth16 phase-2 ceremony
-  (recorded in [`circuits/ceremony/CEREMONY.md`](circuits/ceremony/CEREMONY.md)),
-  **not** a broad public MPC. Mainnet requires the latter.
+  (2 contributors, recorded in
+  [`circuits/ceremony/CEREMONY.md`](circuits/ceremony/CEREMONY.md)), **not** a
+  broad public MPC. Mainnet requires the latter.
 - **Deposit screening is illustrative.** `shield` carries a `screening_ref` and
   the pool rejects a denylisted ref, but the denylist is a stub demonstrating the
   hook — not a real compliance / sanctions-screening integration.
@@ -198,6 +229,12 @@ The hackathon asks for honesty; here is exactly what is and isn't real:
   minimal PoC gates; production needs proper `require_auth` review.
 - **Single self-contained pool.** One YES/NO market with seeded reserves; no
   market factory, oracle resolution, or settlement is implemented in this repo.
+- **Provenance of the circuits.** The Circom circuit *designs* (note scheme,
+  nullifier, Merkle, AMM) predate this hackathon — they are part of Syzy's private
+  R&D. The **hackathon work** is everything that makes them verify and settle on
+  Stellar: the Soroban BN254 Groth16 verifier, the `shielded_pool` contract, the
+  depth-8 re-tuning + ceremony, the testnet deployment, the `syzy-shield` CLI, and
+  the full on-chain end-to-end flow.
 
 ## Status
 
@@ -211,10 +248,16 @@ The hackathon asks for honesty; here is exactly what is and isn't real:
 - [ ] Higher Merkle depth (cheaper in-circuit hash / batching)
 - [ ] Public MPC trusted-setup ceremony + security audit (mainnet prerequisites)
 
+## Team
+
+Built by **[Morca Labs](https://syzy.space)** — a Web3 & AI studio based in
+Vietnam, and the team behind [Syzy](https://syzy.space), a live prediction market
+on Stellar mainnet. Syzy Shielded is our ZK privacy layer for it.
+
 ## License
 
 ISC. See [`package.json`](package.json).
 
 ---
 
-_Built by **Morca Labs** for the Stellar hackathon._
+_Built by **Morca Labs** for the Stellar Hacks "Real-World ZK" hackathon._
