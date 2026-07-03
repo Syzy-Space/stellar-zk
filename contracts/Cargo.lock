@@ -1278,6 +1278,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "shielded_pool"
+version = "0.0.0"
+dependencies = [
+ "groth16_verifier",
+ "hex",
+ "num-bigint",
+ "serde_json",
+ "soroban-sdk",
+]
+
+[[package]]
 name = "shlex"
 version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

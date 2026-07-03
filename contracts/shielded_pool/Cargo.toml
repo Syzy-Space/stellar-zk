@@ -1,0 +1,20 @@
+[package]
+name = "shielded_pool"
+version = "0.0.0"
+edition = "2021"
+
+[lib]
+crate-type = ["lib", "cdylib"]
+doctest = false
+
+[dependencies]
+# Poseidon is vendored (src/poseidon): no ark, no big-int crate — keeps wasm tiny.
+soroban-sdk = { workspace = true }
+
+[dev-dependencies]
+soroban-sdk = { workspace = true, features = ["testutils"] }
+# Register the real verifier natively in tests (avoids wasm spec import quirks).
+groth16_verifier = { path = "../groth16_verifier" }
+hex = "0.4"
+num-bigint = "0.4"
+serde_json = "1"
