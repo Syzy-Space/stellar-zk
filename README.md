@@ -195,6 +195,82 @@ NestJS backend module** can instead relay txs, serve market data, and store
 **encrypted viewing keys** for compliance-friendly auditability — none of it is
 required to run the flow above.
 
+## Backend integration (relayer path)
+
+The CLI can go **through the Syzy backend** instead of submitting Soroban txs
+itself. This is what lets a withdrawal land on-chain **without the user's address
+ever being the tx source** — the backend's dedicated relayer account is.
+
+### What the CLI adds
+
+- [`cli/src/api.ts`](cli/src/api.ts) — a typed client for the backend
+  `/shielded/*` routes (`SYZY_BACKEND_URL`, default `http://localhost:7788`):
+  `getMarkets()`, `relay()`, `getEvents()`, `getScreening()`, `postViewingKey()`,
+  `getAudit()`, plus `buildRelayPayload()` (the single source of truth for the
+  `/shielded/relay` request shape).
+- `syzy-shield markets` — prints the projected market list from the **running
+  backend** (`GET /shielded/markets`).
+- `unshield --relayer` — the relayer path. `unshield` is fully proof-gated and
+  needs **no user `require_auth`**, so the CLI builds the pool `unshield`
+  invocation as a tx whose **SOURCE is the relayer account**
+  ([`SYZY_RELAYER_PUBLIC`](cli/src/config.ts)), prepares it (simulate + assemble
+  the Soroban footprint), serializes it **unsigned** to XDR, and POSTs it to
+  `POST /shielded/relay`. The backend re-validates it is a single
+  pool-only invocation, **signs with its own `SHIELDED_RELAYER_SECRET`**,
+  submits, and returns the tx hash. The default (no `--relayer`) still submits
+  directly from the user wallet.
+
+  > `shield` and `private_swap` relay builders exist too, but the clean,
+  > fully-relayed case is `unshield` (no user auth entry). Relayed `shield`
+  > would pull collateral from the relayer's own balance.
+
+### Run the backend + relayer flow
+
+```bash
+# 1. Backend (in syzy-be), testnet mode. Put these in .env.local (gitignored):
+#   SHIELDED_ENABLED=true
+#   SHIELDED_NETWORK=testnet
+#   SHIELDED_POOL_CONTRACT=CDLT5U3LIA2JPFDYC5AYMZGEAPET3TMQDN5UWA26ER5EVRBKPJDCY2MA
+#   GROTH16_VERIFIER_CONTRACT=CA4HRBVEYSQDVVRRQAVVTKMRDJLM7WFRF7ZWV6Z6GBT4KNOSCNIYUU7X
+#   SHIELDED_RELAYER_SECRET=<a FUNDED testnet secret key>   # friendbot-fund it
+#   STELLAR_RPC_URL / STELLAR_NETWORK_PASSPHRASE / STELLAR_NATIVE_SAC → testnet
+cd syzy-be && npm run build && node dist/main        # boots on :7788
+
+# 2. CLI → backend. Point at the backend + the relayer's PUBLIC key.
+cd cli
+export SYZY_BACKEND_URL=http://localhost:7788
+export SYZY_RELAYER_PUBLIC=<G... public key of the backend's SHIELDED_RELAYER_SECRET>
+
+npx tsx src/index.ts markets                          # reads /shielded/markets
+npx tsx src/index.ts shield   --amount 300000        # create a note to withdraw
+npx tsx src/index.ts unshield --to new --relayer     # CLI → /shielded/relay → chain
+```
+
+> Run the backend with a **stable** process (`node dist/main`), not
+> `start:dev` watch mode — a hot-reload landing mid-`/shielded/relay` will drop
+> the request.
+
+### Demonstrated (live testnet)
+
+```text
+$ syzy-shield markets
+Markets from http://localhost:7788/shielded/markets:
+- GASCMDTRUZKXXFEEEVYR7PCWMASHVU7XNTAV2GN7MPQ3SYG4LIFSJA5E
+    Referral fee flows?
+    yes=5000 no=5000 price=0.5
+- GC3MJXUIZKZJTITOMPOZKYDTF4MYFB5U4IY4KGD5Q2GNZGFFZWNR4TFC
+    L2 fee flows?
+    yes=5000 no=5000 price=0.5
+  ... (live, seeded from the backend's MarketsService)
+```
+
+Relayed `unshield` (CLI → `POST /shielded/relay` → backend signs + submits):
+
+- **Relay tx hash:** `RELAY_TX_HASH_PLACEHOLDER`
+- **Stellar Expert:** https://stellar.expert/explorer/testnet/tx/RELAY_TX_HASH_PLACEHOLDER
+- **Tx source = relayer** `GADH7NJTG63JMCLTCYV5UO6P2SL4IBCTVI5R54PZ3K77NK23YEYXAZLJ`
+  (the user's wallet is **not** the source), confirming the relayer model.
+
 ## Honest scope (this is a hackathon PoC)
 
 The hackathon asks for honesty; here is exactly what is and isn't real:

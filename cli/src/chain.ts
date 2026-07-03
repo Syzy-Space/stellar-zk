@@ -287,10 +287,21 @@ export async function buildUnshieldRelayXdr(
 }
 
 /**
- * Build a relayer-sourced, prepared-but-UNSIGNED invocation of `method` on the
+ * Build a relayer-sourced, UNPREPARED and UNSIGNED invocation of `method` on the
  * pool contract and return it as base64 XDR. Shared by the shield/private_swap/
- * unshield relayer paths: the backend `/shielded/relay` endpoint signs it with
- * its dedicated relayer key and submits it, so no user address is the tx source.
+ * unshield relayer paths.
+ *
+ * The tx carries ONLY the invocation and the relayer as source — it has NO
+ * Soroban footprint yet. The backend `/shielded/relay` endpoint runs
+ * `prepareTransaction` itself (simulate + assemble the footprint + restore any
+ * archived entries), then signs with its dedicated relayer key and submits, so
+ * no user address is the tx source.
+ *
+ * Why not prepare here: re-simulating an ALREADY-prepared tx (one that carries
+ * SorobanData) on the backend fails with `Error(Storage, MissingValue)` because
+ * the embedded footprint is enforced as a required read-set. Assembling the
+ * footprint exactly once, server-side (right before submit), avoids that and is
+ * the correct division of labour for a relayer.
  *
  * The relayer account is the SOURCE, so for `shield` the collateral is pulled
  * from (and `from.require_auth()` is satisfied by) the relayer itself.
@@ -305,17 +316,15 @@ export async function buildRelayXdr(
   const account = await srv.getAccount(relayerPublicKey);
 
   const tx = new TransactionBuilder(account, {
-    fee: "10000000", // 1 XLM ceiling; prepareTransaction sets the exact resource fee
+    fee: "10000000", // 1 XLM ceiling; the backend's prepareTransaction sets the exact resource fee
     networkPassphrase: NETWORK_PASSPHRASE,
   })
     .addOperation(contract.call(method, ...callArgs))
     .setTimeout(120)
     .build();
 
-  // Simulate + assemble the Soroban footprint/auth, but DO NOT sign — the
-  // backend relayer adds the only required signature.
-  const prepared = await srv.prepareTransaction(tx);
-  return prepared.toXDR();
+  // UNPREPARED on purpose — the backend assembles the footprint + signs.
+  return tx.toXDR();
 }
 
 /** Relayer-sourced `shield` XDR (collateral pulled from the relayer `from`). */
