@@ -1,0 +1,31 @@
+{
+  "name": "syzy-shield",
+  "version": "0.1.0",
+  "description": "CLI to generate Groth16 shield proofs and submit them to the Syzy shielded pool on Stellar testnet.",
+  "type": "commonjs",
+  "bin": {
+    "syzy-shield": "dist/index.js"
+  },
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "test": "mocha",
+    "dev": "tsx src/index.ts"
+  },
+  "dependencies": {
+    "@stellar/stellar-sdk": "^15.0.0",
+    "circomlibjs": "^0.1.7",
+    "commander": "^12.0.0",
+    "dotenv": "^16.4.5",
+    "snarkjs": "^0.7.5"
+  },
+  "devDependencies": {
+    "@types/chai": "^4.3.16",
+    "@types/mocha": "^10.0.7",
+    "@types/node": "^20.14.0",
+    "chai": "^4.5.0",
+    "mocha": "^10.8.2",
+    "tsx": "^4.16.0",
+    "typescript": "^5.5.0"
+  }
+}
