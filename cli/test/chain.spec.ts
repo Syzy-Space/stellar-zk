@@ -112,9 +112,16 @@ const offline = process.env.SYZY_OFFLINE === "1";
   "chain: readReserves (testnet integration)",
   function () {
     this.timeout(60000);
-    it("reads [1000000n, 1000000n] from the deployed pool", async () => {
-      const reserves = await readReserves();
-      expect(reserves).to.deep.equal([1000000n, 1000000n]);
+    // The pool is seeded 1000000/1000000 (k=1e12) but live reserves move with
+    // every private_swap, so assert the AMM invariant (both legs positive, the
+    // constant product equals the 1e12 the pool was seeded with) rather than the
+    // exact seeded pair.
+    it("reads two positive reserves preserving the seeded constant product", async () => {
+      const [yes, no] = await readReserves();
+      expect(yes > 0n && no > 0n, `reserves positive: ${yes},${no}`).to.equal(
+        true
+      );
+      expect(yes * no).to.equal(1000000n * 1000000n);
     });
   }
 );
