@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
-members = ["groth16_verifier", "shielded_pool"]
+# shielded_pool is re-added by a later task once that crate exists.
+members = ["groth16_verifier"]
 
 [workspace.dependencies]
 soroban-sdk = "25"
