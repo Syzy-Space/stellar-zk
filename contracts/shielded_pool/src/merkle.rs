@@ -1,4 +1,4 @@
-//! Incremental Poseidon Merkle tree (depth 20), circomlib/Tornado-style.
+//! Incremental Poseidon Merkle tree (depth 8), circomlib/Tornado-style.
 //!
 //! - empty leaf = 0
 //! - node = Poseidon(left, right)
