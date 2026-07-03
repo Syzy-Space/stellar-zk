@@ -176,3 +176,320 @@ fn shield_rejects_wrong_amount() {
     let bad_amount: i128 = 1001;
     pool.shield(&from, &a, &b, &c, &bad_amount, &commitment, &screening_ref);
 }
+
+// ===========================================================================
+// Mock (always-true) verifier + rig for unshield/private_swap bookkeeping.
+//
+// unshield and private_swap have no real proof fixtures yet, so their state
+// transitions are exercised against a tiny always-true verifier. Real-proof
+// e2e for these comes via the CLI (Plan 3).
+// ===========================================================================
+
+#[contract]
+pub struct MockVerifier;
+
+#[contractimpl]
+impl MockVerifier {
+    pub fn verify(
+        _env: Env,
+        _circuit: Symbol,
+        _a: BytesN<64>,
+        _b: BytesN<128>,
+        _c: BytesN<64>,
+        _public_inputs: Vec<BytesN<32>>,
+    ) -> bool {
+        true
+    }
+}
+
+struct Rig {
+    env: Env,
+    pool: ShieldedPoolClient<'static>,
+    token_admin: StellarAssetClient<'static>,
+    token: TokenClient<'static>,
+    admin: Address,
+}
+
+/// Build a pool wired to a mock always-true verifier + a fresh SAC collateral.
+fn mock_rig(env: &Env) -> Rig {
+    env.mock_all_auths();
+    let mv = env.register(MockVerifier, ());
+
+    let admin = Address::generate(env);
+    let issuer = Address::generate(env);
+    let sac = env.register_stellar_asset_contract_v2(issuer);
+    let collateral = sac.address();
+    let token_admin = StellarAssetClient::new(env, &collateral);
+    let token = TokenClient::new(env, &collateral);
+
+    let pool_id = env.register(ShieldedPool, ());
+    let pool = ShieldedPoolClient::new(env, &pool_id);
+    pool.init(&admin, &mv, &collateral);
+
+    Rig {
+        env: env.clone(),
+        pool,
+        token_admin,
+        token,
+        admin,
+    }
+}
+
+fn zero32(env: &Env) -> BytesN<32> {
+    BytesN::from_array(env, &[0u8; 32])
+}
+
+fn dummy_proof(env: &Env) -> (BytesN<64>, BytesN<128>, BytesN<64>) {
+    (
+        BytesN::from_array(env, &[0u8; 64]),
+        BytesN::from_array(env, &[0u8; 128]),
+        BytesN::from_array(env, &[0u8; 64]),
+    )
+}
+
+/// Shield `amount` behind `commitment` (via the mock verifier), funding the pool.
+fn shield_one(rig: &Rig, commitment: &BytesN<32>, amount: i128) -> BytesN<32> {
+    let from = Address::generate(&rig.env);
+    rig.token_admin.mint(&from, &amount);
+    let (a, b, c) = dummy_proof(&rig.env);
+    rig.pool
+        .shield(&from, &a, &b, &c, &amount, commitment, &zero32(&rig.env))
+}
+
+// ---------------------------------------------------------------------------
+// shield deny-list gate
+// ---------------------------------------------------------------------------
+
+#[test]
+#[should_panic(expected = "Error(Contract, #5)")] // ScreeningDenied
+fn shield_rejects_denied_screening_ref() {
+    let env = Env::default();
+    let rig = mock_rig(&env);
+
+    let bad_ref = bytesn::<32>(
+        &env,
+        "00000000000000000000000000000000000000000000000000000000000000ab",
+    );
+    rig.pool.set_denied(&bad_ref, &true);
+    assert!(rig.pool.is_denied(&bad_ref));
+
+    let from = Address::generate(&env);
+    rig.token_admin.mint(&from, &1000i128);
+    let (a, b, c) = dummy_proof(&env);
+    let commitment = bytesn::<32>(
+        &env,
+        "093c676c09f760816c5deb3c528055cb4543055763373a36079755e7cdf98b77",
+    );
+    rig.pool
+        .shield(&from, &a, &b, &c, &1000i128, &commitment, &bad_ref);
+}
+
+// ---------------------------------------------------------------------------
+// unshield
+// ---------------------------------------------------------------------------
+
+#[test]
+fn unshield_pays_recipient_and_accrues_fee() {
+    let env = Env::default();
+    let rig = mock_rig(&env);
+
+    let commitment = bytesn::<32>(
+        &env,
+        "093c676c09f760816c5deb3c528055cb4543055763373a36079755e7cdf98b77",
+    );
+    let root = shield_one(&rig, &commitment, 1000);
+
+    let (a, b, c) = dummy_proof(&env);
+    let nullifier = bytesn::<32>(
+        &env,
+        "0000000000000000000000000000000000000000000000000000000000000001",
+    );
+    let recipient = Address::generate(&env);
+    let rf = zero32(&env);
+
+    rig.pool
+        .unshield(&a, &b, &c, &root, &nullifier, &800i128, &recipient, &rf, &50i128);
+
+    assert!(rig.pool.is_spent(&nullifier));
+    assert_eq!(rig.token.balance(&recipient), 750); // 800 - 50 fee
+    assert_eq!(rig.pool.fees(), 50);
+    assert_eq!(rig.token.balance(&rig.pool.address), 250); // 1000 - 750
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #6)")] // NullifierUsed
+fn unshield_rejects_nullifier_reuse() {
+    let env = Env::default();
+    let rig = mock_rig(&env);
+
+    let commitment = bytesn::<32>(
+        &env,
+        "093c676c09f760816c5deb3c528055cb4543055763373a36079755e7cdf98b77",
+    );
+    let root = shield_one(&rig, &commitment, 1000);
+
+    let (a, b, c) = dummy_proof(&env);
+    let nullifier = bytesn::<32>(
+        &env,
+        "0000000000000000000000000000000000000000000000000000000000000001",
+    );
+    let recipient = Address::generate(&env);
+    let rf = zero32(&env);
+
+    rig.pool
+        .unshield(&a, &b, &c, &root, &nullifier, &100i128, &recipient, &rf, &0i128);
+    rig.pool
+        .unshield(&a, &b, &c, &root, &nullifier, &100i128, &recipient, &rf, &0i128);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #7)")] // UnknownRoot
+fn unshield_rejects_unknown_root() {
+    let env = Env::default();
+    let rig = mock_rig(&env);
+
+    let (a, b, c) = dummy_proof(&env);
+    let bogus_root = bytesn::<32>(
+        &env,
+        "1111111111111111111111111111111111111111111111111111111111111111",
+    );
+    let nullifier = bytesn::<32>(
+        &env,
+        "0000000000000000000000000000000000000000000000000000000000000002",
+    );
+    let recipient = Address::generate(&env);
+    let rf = zero32(&env);
+    rig.pool.unshield(
+        &a, &b, &c, &bogus_root, &nullifier, &100i128, &recipient, &rf, &0i128,
+    );
+}
+
+// ---------------------------------------------------------------------------
+// private_swap
+// ---------------------------------------------------------------------------
+
+#[test]
+fn private_swap_updates_reserves_inserts_two_leaves_and_credits_fee() {
+    let env = Env::default();
+    let rig = mock_rig(&env);
+
+    rig.pool.seed_reserves(&1000i128, &1000i128);
+    assert_eq!(rig.pool.reserves(), (1000, 1000));
+
+    let index_before = rig.pool.next_index();
+
+    let (a, b, c) = dummy_proof(&env);
+    let nullifier = bytesn::<32>(
+        &env,
+        "0000000000000000000000000000000000000000000000000000000000000003",
+    );
+    let out_c = bytesn::<32>(
+        &env,
+        "093c676c09f760816c5deb3c528055cb4543055763373a36079755e7cdf98b77",
+    );
+    let change_c = bytesn::<32>(
+        &env,
+        "0000000000000000000000000000000000000000000000000000000000000007",
+    );
+
+    // asset_out = YES: reserveIn = NO (1000), reserveOut = YES (1000).
+    // After: NO -> 1100 (paid in 100), YES -> 910.
+    let root = rig.pool.private_swap(
+        &a, &b, &c, &nullifier, &out_c, &change_c, &1000i128, &1000i128, &1100i128, &910i128,
+        &ASSET_YES, &5i128,
+    );
+
+    assert!(rig.pool.is_spent(&nullifier));
+    // yes = out_after (910), no = in_after (1100).
+    assert_eq!(rig.pool.reserves(), (910, 1100));
+    assert_eq!(rig.pool.next_index(), index_before + 2, "two leaves inserted");
+    assert_eq!(rig.pool.root(), root);
+    assert!(rig.pool.is_known_root(&root));
+    assert_eq!(rig.pool.fees(), 5);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #8)")] // StaleReserves
+fn private_swap_rejects_stale_reserves() {
+    let env = Env::default();
+    let rig = mock_rig(&env);
+
+    rig.pool.seed_reserves(&1000i128, &1000i128);
+
+    let (a, b, c) = dummy_proof(&env);
+    let nullifier = bytesn::<32>(
+        &env,
+        "0000000000000000000000000000000000000000000000000000000000000004",
+    );
+    let z = zero32(&env);
+
+    // reserve_out_before claims 999 but on-chain YES is 1000 -> stale.
+    rig.pool.private_swap(
+        &a, &b, &c, &nullifier, &z, &z, &1000i128, &999i128, &1100i128, &900i128, &ASSET_YES,
+        &0i128,
+    );
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #6)")] // NullifierUsed
+fn private_swap_rejects_nullifier_reuse() {
+    let env = Env::default();
+    let rig = mock_rig(&env);
+
+    rig.pool.seed_reserves(&1000i128, &1000i128);
+
+    let (a, b, c) = dummy_proof(&env);
+    let nullifier = bytesn::<32>(
+        &env,
+        "0000000000000000000000000000000000000000000000000000000000000005",
+    );
+    let out_c = bytesn::<32>(
+        &env,
+        "093c676c09f760816c5deb3c528055cb4543055763373a36079755e7cdf98b77",
+    );
+    let change_c = bytesn::<32>(
+        &env,
+        "0000000000000000000000000000000000000000000000000000000000000007",
+    );
+
+    rig.pool.private_swap(
+        &a, &b, &c, &nullifier, &out_c, &change_c, &1000i128, &1000i128, &1100i128, &910i128,
+        &ASSET_YES, &0i128,
+    );
+    // Reserves are now (910, 1100); reuse the SAME nullifier with fresh reserves.
+    rig.pool.private_swap(
+        &a, &b, &c, &nullifier, &out_c, &change_c, &1100i128, &910i128, &1150i128, &870i128,
+        &ASSET_YES, &0i128,
+    );
+}
+
+// ---------------------------------------------------------------------------
+// fees
+// ---------------------------------------------------------------------------
+
+#[test]
+fn withdraw_fees_pays_admin_and_zeroes() {
+    let env = Env::default();
+    let rig = mock_rig(&env);
+
+    let commitment = bytesn::<32>(
+        &env,
+        "093c676c09f760816c5deb3c528055cb4543055763373a36079755e7cdf98b77",
+    );
+    let root = shield_one(&rig, &commitment, 1000);
+    let (a, b, c) = dummy_proof(&env);
+    let nullifier = bytesn::<32>(
+        &env,
+        "0000000000000000000000000000000000000000000000000000000000000009",
+    );
+    let recipient = Address::generate(&env);
+    let rf = zero32(&env);
+    rig.pool
+        .unshield(&a, &b, &c, &root, &nullifier, &500i128, &recipient, &rf, &100i128);
+    assert_eq!(rig.pool.fees(), 100);
+
+    let paid = rig.pool.withdraw_fees(&rig.admin);
+    assert_eq!(paid, 100);
+    assert_eq!(rig.pool.fees(), 0);
+    assert_eq!(rig.token.balance(&rig.admin), 100);
+}
