@@ -66,7 +66,7 @@ fn merkle_single_leaf_matches_js() {
         "4177540253733635645361238714027443668024359729367908007663945898284069522295",
     );
 
-    // Insert it at index 0 of an empty depth-20 tree.
+    // Insert it at index 0 of an empty depth-8 tree.
     let (root, index) = env.as_contract(&contract_id, || {
         crate::merkle::init(&env);
         crate::merkle::insert(&env, commitment.clone())
@@ -74,11 +74,11 @@ fn merkle_single_leaf_matches_js() {
 
     assert_eq!(index, 0);
 
-    // Expected root from JS: node = require("circuits/test/helpers.js")
-    //   singleLeafPath(L, 20).root, printed as 64-char hex (see report).
+    // Expected root from the JS MerkleTree(8) reference (client crypto.ts),
+    // printed as 64-char hex.
     let expected = bytesn::<32>(
         &env,
-        "0e5f129b3b39de1281523e69da21c32252d264520dcf087b0170602091972bb2",
+        "18469751a114b7d6bbdf882055125ca579f398148c52626f4757abd712989506",
     );
 
     assert_eq!(
@@ -136,7 +136,7 @@ fn shield_inserts_commitment_and_moves_tokens() {
     // Root equals the single-leaf JS reference root.
     let expected = bytesn::<32>(
         &env,
-        "0e5f129b3b39de1281523e69da21c32252d264520dcf087b0170602091972bb2",
+        "18469751a114b7d6bbdf882055125ca579f398148c52626f4757abd712989506",
     );
     assert_eq!(new_root, expected);
     assert_eq!(pool.root(), expected);

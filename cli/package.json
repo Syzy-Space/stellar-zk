@@ -10,7 +10,8 @@
   "scripts": {
     "build": "tsc",
     "test": "mocha",
-    "dev": "tsx src/index.ts"
+    "dev": "tsx src/index.ts",
+    "e2e": "bash scripts/e2e-testnet.sh"
   },
   "dependencies": {
     "@stellar/stellar-sdk": "^15.0.0",

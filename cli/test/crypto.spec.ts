@@ -15,7 +15,7 @@ import { REPO_ROOT, MERKLE_DEPTH } from "../src/config";
 // Known empty-tree / fixture roots from the contract test
 // (contracts/shielded_pool/src/test.rs).
 const CONTRACT_FIXTURE_ROOT =
-  "0e5f129b3b39de1281523e69da21c32252d264520dcf087b0170602091972bb2";
+  "18469751a114b7d6bbdf882055125ca579f398148c52626f4757abd712989506";
 
 // Shield fixture commitment = public input #2 (fixtures/shield.public.json[1]).
 const FIXTURE_COMMITMENT = BigInt(
@@ -64,9 +64,9 @@ describe("crypto", function () {
     expect(nullifier(7n, 42n, 0n)).to.equal(poseidon([7n, 42n, 0n]));
   });
 
-  it("empty depth-20 tree root has the expected structure", () => {
+  it("empty tree root has the expected structure", () => {
     const tree = new MerkleTree(MERKLE_DEPTH);
-    // sanity: empty root == zeros[20]; recompute independently.
+    // sanity: empty root == zeros[DEPTH]; recompute independently.
     let z = 0n;
     for (let i = 0; i < MERKLE_DEPTH; i++) z = poseidon([z, z]);
     expect(tree.emptyRoot()).to.equal(z);

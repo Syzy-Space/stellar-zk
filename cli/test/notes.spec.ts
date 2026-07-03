@@ -13,6 +13,7 @@ import {
   deriveOwnerPk,
   noteCommitment,
 } from "../src/crypto";
+import { MERKLE_DEPTH } from "../src/config";
 
 describe("notes", function () {
   this.timeout(30000);
@@ -93,8 +94,8 @@ describe("notes", function () {
     expect(idx).to.equal(1);
 
     const { pathElements, pathIndices } = tree.pathFor(idx);
-    expect(pathElements).to.have.length(20);
-    expect(pathIndices).to.have.length(20);
+    expect(pathElements).to.have.length(MERKLE_DEPTH);
+    expect(pathIndices).to.have.length(MERKLE_DEPTH);
   });
 
   it("sync assigns leafIndex to our notes by matching recomputed commitments", () => {
@@ -117,6 +118,6 @@ describe("notes", function () {
     expect(note.leafIndex).to.equal(1);
 
     const { pathElements } = store.treeAndPath(note.leafIndex).path;
-    expect(pathElements).to.have.length(20);
+    expect(pathElements).to.have.length(MERKLE_DEPTH);
   });
 });

@@ -50,4 +50,8 @@ template Unshield(depth) {
     }
 }
 
-component main {public [root, nullifier, withdrawAmount, recipient]} = Unshield(20);
+// Tree depth 8 (256 leaves). Kept small so the pool's on-chain Poseidon Merkle
+// insert (DEPTH hashes) plus the Groth16 pairing verify fit the Soroban CPU
+// budget. Must match contracts/shielded_pool merkle::DEPTH and the client's
+// MERKLE_DEPTH.
+component main {public [root, nullifier, withdrawAmount, recipient]} = Unshield(8);

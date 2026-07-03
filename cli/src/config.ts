@@ -14,8 +14,9 @@ function env(key: string, fallback: string): string {
 // --- Deployed testnet contracts (live) ---
 export const POOL_CONTRACT_ID = env(
   "SYZY_POOL_ID",
-  // Redeployed 2026-07-04 with the private_swap assetOut public-input fix.
-  "CDOMFCJ2M25BBDAJB3657QYOLA43PRHXR62CHZS27CYRVZVAWZARMVDL"
+  // Redeployed 2026-07-04: private_swap assetOut fix + cached Merkle zeros
+  // (CPU-budget critical) + privswap VK correctly wired on the verifier.
+  "CCQPWL5WCDMRXDHVP5HGH4KU7YPDKDNXR5KYGIDZPQWHAZFASQS5LZFH"
 );
 export const VERIFIER_CONTRACT_ID = env(
   "SYZY_VERIFIER_ID",
@@ -80,5 +81,6 @@ export const ASSET = {
   NO: 2n,
 } as const;
 
-// Merkle tree depth (must match the circuit + contract).
-export const MERKLE_DEPTH = 20;
+// Merkle tree depth (must match the circuit + contract). Depth 8 (256 leaves)
+// keeps the pool's on-chain Poseidon inserts within the Soroban CPU budget.
+export const MERKLE_DEPTH = 8;

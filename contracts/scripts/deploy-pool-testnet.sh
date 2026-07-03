@@ -32,11 +32,15 @@ invoke() { stellar contract invoke --id "$1" --source "$SOURCE" --network "$NETW
 echo "== Emitting hex vkeys =="
 node "$ROOT/tools/emit-all-vkeys.js"
 
-for circuit in unshield private_swap; do
-  echo "== set_vk $circuit =="
-  VK="$(cat "$ROOT/tools/vkeys/${circuit}.vk.json")"
-  invoke "$VERIFIER_ID" set_vk --circuit "$circuit" --vk "$VK"
-done
+# The verifier stores VKs keyed by the circuit symbol the POOL passes at call
+# time. The pool uses `symbol_short!` names: shield, unshield, privswap. Note the
+# private_swap VK MUST be registered under `privswap` (not `private_swap`), or
+# private_swap's on-chain verify traps with a missing-VK unwrap.
+set_vk() { invoke "$VERIFIER_ID" set_vk --circuit "$1" --vk "$(cat "$ROOT/tools/vkeys/$2.vk.json")"; }
+echo "== set_vk unshield =="
+set_vk unshield unshield
+echo "== set_vk privswap (from private_swap vkey) =="
+set_vk privswap private_swap
 
 # ---- 2. Build + optimize the pool wasm ------------------------------------- #
 echo "== Build + optimize pool =="

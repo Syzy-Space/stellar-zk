@@ -132,6 +132,9 @@ template PrivateSwap(depth) {
     changeCommitment === chNote.commitment;
 }
 
+// Tree depth 8 (256 leaves) — matches unshield, the pool's merkle::DEPTH and the
+// client's MERKLE_DEPTH. Small depth keeps the pool's TWO on-chain Poseidon
+// inserts (out + change) plus the pairing verify inside the Soroban CPU budget.
 component main {public [root, nullifierIn, outCommitment, changeCommitment,
     reserveInBefore, reserveOutBefore, reserveInAfter, reserveOutAfter, assetOut]}
-    = PrivateSwap(20);
+    = PrivateSwap(8);

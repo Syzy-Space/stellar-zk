@@ -113,26 +113,101 @@ export async function readRoot(): Promise<string> {
   return Buffer.from(buf).toString("hex");
 }
 
+export interface UnshieldArgs {
+  a: string; // 64-byte hex
+  b: string; // 128-byte hex
+  c: string; // 64-byte hex
+  root: string; // 32-byte hex
+  nullifier: string; // 32-byte hex
+  withdrawAmount: bigint;
+  recipient: string; // G... Address
+  recipientField: string; // 32-byte hex (value bound by the proof)
+  fee: bigint;
+}
+
 /**
- * Build, simulate/prepare, sign and submit a `shield` invocation.
- * Returns the transaction hash once it reaches a final status.
- * NOTE: `args.from` must equal `kp.publicKey()` because the contract calls
- * `from.require_auth()` and pulls collateral from `from`.
+ * unshield(proof_a: BytesN<64>, proof_b: BytesN<128>, proof_c: BytesN<64>,
+ *          root: BytesN<32>, nullifier: BytesN<32>, withdraw_amount: i128,
+ *          recipient: Address, recipient_field: BytesN<32>, fee: i128)
  */
-export async function submitShield(
+export function buildUnshieldArgs(args: UnshieldArgs): xdr.ScVal[] {
+  return [
+    bytesScVal(args.a, 64),
+    bytesScVal(args.b, 128),
+    bytesScVal(args.c, 64),
+    bytesScVal(args.root, 32),
+    bytesScVal(args.nullifier, 32),
+    nativeToScVal(args.withdrawAmount, { type: "i128" }),
+    new Address(args.recipient).toScVal(),
+    bytesScVal(args.recipientField, 32),
+    nativeToScVal(args.fee, { type: "i128" }),
+  ];
+}
+
+export interface PrivateSwapArgs {
+  a: string; // 64-byte hex
+  b: string; // 128-byte hex
+  c: string; // 64-byte hex
+  nullifierIn: string; // 32-byte hex
+  outCommitment: string; // 32-byte hex
+  changeCommitment: string; // 32-byte hex
+  reserveInBefore: bigint;
+  reserveOutBefore: bigint;
+  reserveInAfter: bigint;
+  reserveOutAfter: bigint;
+  /** Contract asset_out selector: ASSET_YES=0, ASSET_NO=1. */
+  assetOut: number;
+  fee: bigint;
+}
+
+/**
+ * private_swap(proof_a: BytesN<64>, proof_b: BytesN<128>, proof_c: BytesN<64>,
+ *   nullifier_in: BytesN<32>, out_commitment: BytesN<32>,
+ *   change_commitment: BytesN<32>, reserve_in_before: i128,
+ *   reserve_out_before: i128, reserve_in_after: i128, reserve_out_after: i128,
+ *   asset_out: u32, fee: i128)
+ */
+export function buildPrivateSwapArgs(args: PrivateSwapArgs): xdr.ScVal[] {
+  return [
+    bytesScVal(args.a, 64),
+    bytesScVal(args.b, 128),
+    bytesScVal(args.c, 64),
+    bytesScVal(args.nullifierIn, 32),
+    bytesScVal(args.outCommitment, 32),
+    bytesScVal(args.changeCommitment, 32),
+    nativeToScVal(args.reserveInBefore, { type: "i128" }),
+    nativeToScVal(args.reserveOutBefore, { type: "i128" }),
+    nativeToScVal(args.reserveInAfter, { type: "i128" }),
+    nativeToScVal(args.reserveOutAfter, { type: "i128" }),
+    nativeToScVal(args.assetOut, { type: "u32" }),
+    nativeToScVal(args.fee, { type: "i128" }),
+  ];
+}
+
+/**
+ * Build, simulate/prepare, sign and submit a pool invocation.
+ * Returns the transaction hash once it reaches SUCCESS (throws otherwise).
+ */
+export async function submit(
   kp: Keypair,
-  args: ShieldArgs
+  method: string,
+  callArgs: xdr.ScVal[]
 ): Promise<string> {
   const srv = server();
   const contract = new Contract(POOL_CONTRACT_ID);
   const account = await srv.getAccount(kp.publicKey());
 
+  // The Soroban resource fee for these proof-verifying entrypoints is large
+  // (shield ~= 0.05 XLM; the on-chain BN254 pairing + 20 Poseidon Merkle hashes
+  // cost ~400M instructions). Set a generous inclusion fee so simulation can
+  // attach the full resource footprint; prepareTransaction then sets the exact
+  // resource fee. Too low a fee here makes the RPC reject the resource estimate.
   const tx = new TransactionBuilder(account, {
-    fee: BASE_FEE,
+    fee: "10000000", // 1 XLM ceiling; actual fee is set from the resource estimate
     networkPassphrase: NETWORK_PASSPHRASE,
   })
-    .addOperation(contract.call("shield", ...buildShieldArgs(args)))
-    .setTimeout(60)
+    .addOperation(contract.call(method, ...callArgs))
+    .setTimeout(120)
     .build();
 
   // Simulate + assemble (adds Soroban resource footprint & auth).
@@ -147,9 +222,8 @@ export async function submitShield(
   }
 
   const hash = sent.hash;
-  // Poll until the transaction leaves NOT_FOUND / PENDING.
   let result = await srv.getTransaction(hash);
-  const deadline = Date.now() + 60000;
+  const deadline = Date.now() + 90000;
   while (
     result.status === rpc.Api.GetTransactionStatus.NOT_FOUND &&
     Date.now() < deadline
@@ -159,7 +233,95 @@ export async function submitShield(
   }
 
   if (result.status !== rpc.Api.GetTransactionStatus.SUCCESS) {
-    throw new Error(`shield tx ${hash} status=${result.status}`);
+    const detail =
+      "resultXdr" in result
+        ? JSON.stringify((result as { resultXdr?: unknown }).resultXdr)
+        : "";
+    throw new Error(`${method} tx ${hash} status=${result.status} ${detail}`);
   }
   return hash;
 }
+
+/**
+ * Build, simulate/prepare, sign and submit a `shield` invocation.
+ * NOTE: `args.from` must equal `kp.publicKey()` because the contract calls
+ * `from.require_auth()` and pulls collateral from `from`.
+ */
+export async function submitShield(
+  kp: Keypair,
+  args: ShieldArgs
+): Promise<string> {
+  return submit(kp, "shield", buildShieldArgs(args));
+}
+
+export async function submitUnshield(
+  kp: Keypair,
+  args: UnshieldArgs
+): Promise<string> {
+  return submit(kp, "unshield", buildUnshieldArgs(args));
+}
+
+export async function submitPrivateSwap(
+  kp: Keypair,
+  args: PrivateSwapArgs
+): Promise<string> {
+  return submit(kp, "private_swap", buildPrivateSwapArgs(args));
+}
+
+/**
+ * Scan the pool's contract events to reconstruct the ORDERED list of leaf
+ * commitments inserted into the Merkle tree, so a client can rebuild the tree
+ * and compute authentication paths even when OTHER clients also inserted.
+ *
+ * `shield` emits `("shield", commitment) -> (index, new_root)` — one leaf.
+ * `private_swap` emits `("privswap", nullifier) -> (asset_out, new_root)` but
+ * does NOT expose the two commitments in the event, so swap-inserted leaves
+ * cannot be recovered from events alone (a known PoC limitation). For a tree
+ * that only received shields (the common demo path) this yields the exact leaf
+ * list. Returns leaves in ascending leaf-index order.
+ *
+ * Testnet RPC retains only recent events; `startLedger` bounds the scan.
+ */
+export async function scanShieldLeaves(
+  lookbackLedgers = 17000
+): Promise<{ index: number; commitment: string }[]> {
+  const srv = server();
+  const latest = await srv.getLatestLedger();
+  let startLedger = latest.sequence - lookbackLedgers;
+  if (startLedger < 1) startLedger = 1;
+
+  const out: { index: number; commitment: string }[] = [];
+  let cursor: string | undefined;
+  const filters = [
+    { type: "contract" as const, contractIds: [POOL_CONTRACT_ID] },
+  ];
+  // Page through events.
+  for (let page = 0; page < 20; page++) {
+    const resp = await srv.getEvents(
+      cursor
+        ? { cursor, filters, limit: 100 }
+        : { startLedger, filters, limit: 100 }
+    );
+    for (const e of resp.events) {
+      let topic0: unknown;
+      try {
+        topic0 = scValToNative(e.topic[0]);
+      } catch {
+        continue;
+      }
+      if (topic0 !== "shield") continue;
+      const commitment = Buffer.from(
+        scValToNative(e.topic[1]) as Buffer
+      ).toString("hex");
+      const val = scValToNative(e.value) as [number, unknown];
+      const index = Number(val[0]);
+      out.push({ index, commitment });
+    }
+    if (!resp.events.length || !resp.cursor) break;
+    cursor = resp.cursor;
+  }
+  out.sort((a, b) => a.index - b.index);
+  return out;
+}
+
+export { POOL_CONTRACT_ID };
