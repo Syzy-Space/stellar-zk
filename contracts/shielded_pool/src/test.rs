@@ -3,7 +3,8 @@
 use super::*;
 use num_bigint::BigUint;
 use soroban_sdk::testutils::Address as _;
-use soroban_sdk::{symbol_short, Address, BytesN, Env, Vec};
+use soroban_sdk::token::{StellarAssetClient, TokenClient};
+use soroban_sdk::{contract, contractimpl, symbol_short, Address, BytesN, Env, Symbol, Vec};
 
 // Reuse the deployed verifier's real VK + proof fixture.
 const FIXTURE: &str = include_str!("../../groth16_verifier/src/testdata/shield.json");
