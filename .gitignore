@@ -6,3 +6,5 @@ circuits/ceremony/*.zkey
 *.wtns
 *.r1cs
 *.sym
+circuits/ceremony/keys/*.zkey
+contracts/target/

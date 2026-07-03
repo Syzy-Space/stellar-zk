@@ -17,7 +17,7 @@ Stellar testnet.
 | `set_vk` tx | `4109fb48163cee039b90d2d2988b7782ba60578d567b6ea2f887f6f4b7036542` |
 | `verify` tx | `161356db24e6481c5cf73ef7140b7014a55ae06a129e05eca0644b457240449f` |
 | `verify` result | `true` |
-| deployed | <fill-in> |
+| deployed | 2026-07-03 |
 
 Stellar Expert (verify tx):
 https://stellar.expert/explorer/testnet/tx/161356db24e6481c5cf73ef7140b7014a55ae06a129e05eca0644b457240449f
