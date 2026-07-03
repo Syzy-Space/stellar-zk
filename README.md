@@ -227,14 +227,26 @@ ever being the tx source** — the backend's dedicated relayer account is.
 ### Run the backend + relayer flow
 
 ```bash
-# 1. Backend (in syzy-be), testnet mode. Put these in .env.local (gitignored):
+# 1. Backend (in syzy-be), testnet mode. Put the shielded config in .env.local
+#    (gitignored):
 #   SHIELDED_ENABLED=true
 #   SHIELDED_NETWORK=testnet
 #   SHIELDED_POOL_CONTRACT=CDLT5U3LIA2JPFDYC5AYMZGEAPET3TMQDN5UWA26ER5EVRBKPJDCY2MA
 #   GROTH16_VERIFIER_CONTRACT=CA4HRBVEYSQDVVRRQAVVTKMRDJLM7WFRF7ZWV6Z6GBT4KNOSCNIYUU7X
 #   SHIELDED_RELAYER_SECRET=<a FUNDED testnet secret key>   # friendbot-fund it
-#   STELLAR_RPC_URL / STELLAR_NETWORK_PASSPHRASE / STELLAR_NATIVE_SAC → testnet
-cd syzy-be && npm run build && node dist/main        # boots on :7788
+#
+# The relayer prepares/simulates against STELLAR_RPC_URL. If the repo's committed
+# .env points at MAINNET, EXPORT the testnet Stellar vars when launching so the
+# shell env wins over dotenv (NestJS ConfigModule does not reliably override a
+# process.env value that network.config reads directly) — otherwise the relay
+# simulates the testnet pool against mainnet RPC and fails with
+# `Error(Storage, MissingValue)` (the contract doesn't exist on mainnet):
+cd syzy-be && npm run build
+STELLAR_RPC_URL="https://soroban-testnet.stellar.org" \
+STELLAR_NETWORK_PASSPHRASE="Test SDF Network ; September 2015" \
+STELLAR_CONTRACT_ID="CDLT5U3LIA2JPFDYC5AYMZGEAPET3TMQDN5UWA26ER5EVRBKPJDCY2MA" \
+STELLAR_NATIVE_SAC="CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC" \
+  node dist/main                                     # boots on :7788
 
 # 2. CLI → backend. Point at the backend + the relayer's PUBLIC key.
 cd cli
@@ -266,8 +278,8 @@ Markets from http://localhost:7788/shielded/markets:
 
 Relayed `unshield` (CLI → `POST /shielded/relay` → backend signs + submits):
 
-- **Relay tx hash:** `RELAY_TX_HASH_PLACEHOLDER`
-- **Stellar Expert:** https://stellar.expert/explorer/testnet/tx/RELAY_TX_HASH_PLACEHOLDER
+- **Relay tx hash:** `4bbd6479f79d1c121118bf817a6061436a60e45f088071f04913cb795f0abf53`
+- **Stellar Expert:** https://stellar.expert/explorer/testnet/tx/4bbd6479f79d1c121118bf817a6061436a60e45f088071f04913cb795f0abf53
 - **Tx source = relayer** `GADH7NJTG63JMCLTCYV5UO6P2SL4IBCTVI5R54PZ3K77NK23YEYXAZLJ`
   (the user's wallet is **not** the source), confirming the relayer model.
 
