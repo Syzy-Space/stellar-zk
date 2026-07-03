@@ -91,3 +91,101 @@ Reproduce the full deploy + wire + seed with:
 ```
 bash contracts/scripts/deploy-pool-testnet.sh
 ```
+
+---
+
+## End-to-end flow (via CLI)
+
+A complete **shield → private_swap → unshield** flow was executed on Stellar
+testnet by the `syzy-shield` CLI (`cli/`), each step generating a real Groth16
+proof off-chain and landing a real proof-gated transaction on-chain.
+
+### Pool used (depth-8 instance)
+
+The Merkle tree depth was reduced from 20 to **8** so the proof-verify +
+Poseidon-insert work fits Soroban's 400M-instruction per-transaction CPU budget
+(one on-chain Poseidon2 ≈ 19.1M instructions; a depth-20 `private_swap` does 40
+inserts ≈ 765M, which exceeds the cap, whereas depth-8 does 16 inserts ≈ 306M).
+This E2E ran against a fresh depth-8 pool wired to the existing verifier.
+
+| Field | Value |
+| --- | --- |
+| Pool contract ID (depth-8, this run) | `CCSJFHFYS67SACE3HPEMZPQDLR3IXH76322VCFDTVML4OD5VTGE3PF5Y` |
+| Verifier contract ID | `CA4HRBVEYSQDVVRRQAVVTKMRDJLM7WFRF7ZWV6Z6GBT4KNOSCNIYUU7X` |
+| XLM SAC (collateral) | `CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC` |
+| Deposit account (funds shield) | `GAVM6MGAM6SKR46PH3QRR7WP34TWQADVDR26EFXMTBFCKTPQJREGYZBN` |
+| Seeded reserves (yes, no) | `1_000_000`, `1_000_000` |
+
+The verifier's three VKs were (re)set from the current ceremony
+(`tools/vkeys/*.vk.json`) so the on-chain keys match the depth-8 circuits:
+`shield` `143771834798e7dce3082d7bd0c5f43ffbf1b7fd807bb8d0d54cb95370bb15c6`,
+`unshield` `26c6e4571be5fc818d710ad86a68aeaa8ecdd6889f11bb5d7fbc19fcf2b3cbad`,
+`privswap` `1fd9ef64daee5a12a36d18eb13027d47d913d8b044c7b25e5fc8602ad9b8b024`.
+
+### Transactions (all SUCCESS)
+
+| Step | Entrypoint | Tx hash | Stellar Expert |
+| --- | --- | --- | --- |
+| 1. shield 1_000_000 collateral | `shield` | `806e142ee75ddd4be9cb12189f90bc550c63cd779f89ffeb8f152504084f0cb5` | https://stellar.expert/explorer/testnet/tx/806e142ee75ddd4be9cb12189f90bc550c63cd779f89ffeb8f152504084f0cb5 |
+| 2. swap 250_000 collateral → 200_000 YES (+750_000 change) | `private_swap` | `f9548d536b2afb1c4f3a96009cf7bb2beae4bf3c83c3067b4fe877b982dca9fa` | https://stellar.expert/explorer/testnet/tx/f9548d536b2afb1c4f3a96009cf7bb2beae4bf3c83c3067b4fe877b982dca9fa |
+| 3. unshield 750_000 change note → fresh address | `unshield` | `a2014c8bbae2551329a99bf7d72aa4a68b161ac3fc2410b07f1299e1c5ad7f2d` | https://stellar.expert/explorer/testnet/tx/a2014c8bbae2551329a99bf7d72aa4a68b161ac3fc2410b07f1299e1c5ad7f2d |
+
+### Entrypoint signatures called (from `contracts/shielded_pool/src/lib.rs`)
+
+```
+shield(from: Address, proof_a: BytesN<64>, proof_b: BytesN<128>,
+       proof_c: BytesN<64>, amount: i128, commitment: BytesN<32>,
+       screening_ref: BytesN<32>) -> BytesN<32>
+
+private_swap(proof_a: BytesN<64>, proof_b: BytesN<128>, proof_c: BytesN<64>,
+             nullifier_in: BytesN<32>, out_commitment: BytesN<32>,
+             change_commitment: BytesN<32>, reserve_in_before: i128,
+             reserve_out_before: i128, reserve_in_after: i128,
+             reserve_out_after: i128, asset_out: u32, fee: i128) -> BytesN<32>
+
+unshield(proof_a: BytesN<64>, proof_b: BytesN<128>, proof_c: BytesN<64>,
+         root: BytesN<32>, nullifier: BytesN<32>, withdraw_amount: i128,
+         recipient: Address, recipient_field: BytesN<32>, fee: i128)
+```
+
+### AMM constant-product for the swap
+
+Reserves seeded `yes = no = 1_000_000`. Receiving YES pays into the NO leg
+(`reserveIn = no`, `reserveOut = yes`). The circuit enforces `k` EXACTLY
+(`kBefore === kAfter`), so `amountIn` is chosen so `reserveInAfter` divides `k`:
+
+```
+k                = reserveInBefore * reserveOutBefore = 1_000_000 * 1_000_000 = 1e12
+amountIn         = 250_000
+reserveInAfter   = 1_000_000 + 250_000 = 1_250_000   (divides 1e12)
+reserveOutAfter  = 1e12 / 1_250_000    = 800_000
+amountOut        = 1_000_000 - 800_000 = 200_000  (YES received)
+change           = 1_000_000 - 250_000 = 750_000  (collateral change note)
+```
+
+Note the `asset_out` encoding: the CLI passes the entrypoint selector `0` for YES
+/ `1` for NO, and the contract forwards `asset_out + 1` as the Groth16 public
+input because the circuit's `assetOut` signal is the note-scheme id (YES=1/NO=2).
+
+### Unshield unlinkability
+
+The `unshield` recipient was a **brand-new address**
+`GDELIMCPFATQFPIM5LUISQAE7T2VA2DZF5WO3L7T4K2HHHNCIXGA6IHJ`, funded by SDF
+friendbot (NOT by the deposit account). The pool paid the `750_000` collateral to
+it from the pool's own balance, gated only by the note's nullifier + Merkle proof.
+There is **no on-chain payment or account-creation link** between the deposit
+account `GAVM6MGA…` and the withdrawal address `GDELIMCP…` — the shielded pool is
+the only common counterparty. Post-flow recipient balance: `10000.0750000` XLM
+(10000 friendbot + 0.075 XLM unshielded).
+
+### Reproduce
+
+```
+# depth-8 circuits + contract; verifier VKs set from tools/vkeys/*.vk.json
+export SYZY_POOL_ID=<pool-id>
+syzy-shield init                       # create + friendbot-fund a wallet
+syzy-shield shield --amount 1000000
+syzy-shield sync                       # rebuild leaf mirror from on-chain events
+syzy-shield swap --side yes --amount 250000
+syzy-shield unshield --to new          # fresh, unlinked recipient
+```
