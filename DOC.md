@@ -24,10 +24,14 @@ between their actions private**. Nothing is trusted to an operator: privacy come
 from mathematics, and every action is authorized by a zero-knowledge proof that is
 **verified on-chain** by a Stellar smart contract.
 
-The central technical milestone we reached: **a real zk-SNARK proof, generated
-off-chain, verified on Stellar testnet inside the Soroban host** using Stellar's
-native BN254 elliptic-curve pairing. This is the hard part — the cryptographic
-foundation everything else builds on — and it works.
+The central technical milestone: **a real zk-SNARK proof, generated off-chain,
+verified on Stellar testnet inside the Soroban host** using Stellar's native BN254
+elliptic-curve pairing. That is the hard part — and it works. On top of it we then
+built the full system: a stateful `shielded_pool` contract (Poseidon Merkle tree +
+nullifiers + a YES/NO AMM), a `syzy-shield` CLI, and an optional NestJS relayer
+backend — and ran a **complete `shield → private_swap → unshield` flow end-to-end
+on testnet**, every step gated by an on-chain proof, every transaction
+`successful = true`. The tx hashes are in §6 and `contracts/DEPLOYMENTS.md`.
 
 ---
 
@@ -141,8 +145,9 @@ gadgets live in `circuits/lib/`:
 - **`note.circom`** — the note commitment `Poseidon(asset, amount, ownerPk, rho)`.
 - **`nullifier.circom`** — derives `ownerPk = Poseidon(ownerSk)` and
   `nullifier = Poseidon(ownerSk, rho, leafIndex)`.
-- **`merkle.circom`** — depth-20 Poseidon Merkle inclusion proof with
-  bit-constrained path indices.
+- **`merkle.circom`** — depth-8 Poseidon Merkle inclusion proof with
+  bit-constrained path indices. (Depth was reduced from 20 to 8 so the pool's
+  on-chain Merkle inserts fit Soroban's per-transaction CPU budget — see §7.)
 
 The three top-level circuits:
 
@@ -217,11 +222,37 @@ and transaction hashes are in `contracts/DEPLOYMENTS.md`.
 
 - **`tools/`** — the snarkjs → host byte encoder and verifier-fixture emitter, plus
   their tests. This is the glue that makes off-chain proofs consumable on-chain.
-- **`contracts/poseidon_probe/`** — a de-risking experiment proving we can compute
-  **circom-compatible Poseidon inside a Soroban contract** (via a pure-Rust ark-ff
-  implementation, no host field ops needed). This validates the path to an on-chain
-  Merkle-tree state contract.
+- **`contracts/poseidon_probe/`** — **circom-compatible Poseidon computed inside a
+  Soroban contract.** We first tried a pure-Rust `ark-bn254` implementation: it
+  matched circomlib but compiled to a **~2 MB** wasm that the RPC rejected (413) and
+  blew the CPU budget on-chain. We replaced it with a **lean, no-ark, hand-vendored
+  BN254 scalar field in Montgomery form (CIOS multiply)** — **~10 KB** wasm, and
+  cheap enough to run within Soroban's instruction budget. This exact Poseidon is
+  what `shielded_pool` uses to maintain its Merkle tree, and its roots byte-match the
+  circuits' (and the CLI's) tree.
 - **`fixtures/`** — sample proof / public-input / calldata JSON for reproducible tests.
+
+### 4.5 The shielded-pool state contract
+
+`contracts/shielded_pool/` is the stateful heart: it holds the **YES/NO reserves**,
+an **incremental Poseidon Merkle tree** of note commitments, and the **nullifier
+set**. Every `shield` / `private_swap` / `unshield` cross-calls the verifier, and
+only on a `true` result does it mutate state — insert commitments, advance the root,
+record nullifiers, move reserves, transfer collateral. It is deployed to testnet and
+covered by Rust `cargo test` (the tests verify a real proof inside the host env).
+
+### 4.6 The CLI and the optional relayer backend
+
+- **`cli/` (`syzy-shield`)** — an encrypted local note store, on-chain event sync to
+  rebuild the Merkle tree, snarkjs proof generation, and Stellar submission. Commands:
+  `init / markets / shield / swap / unshield / balance / sync`. `npm run e2e` runs the
+  whole flow.
+- **NestJS `shielded` module** (in the private Syzy backend) — a testnet-gated
+  relayer: `/shielded/markets` (market data), `/shielded/relay` (submits a
+  proof-gated tx from a **dedicated relayer account**, so the user's address is never
+  the tx source), `/shielded/events`, and encrypted **viewing-key** + **screening**
+  endpoints. The CLI's `unshield --relayer` drives this path — demonstrated live on
+  testnet.
 
 ---
 
@@ -239,13 +270,24 @@ and transaction hashes are in `contracts/DEPLOYMENTS.md`.
 
 ## 6. End-to-end flow (worked example)
 
+**This flow is not hypothetical — it ran on Stellar testnet** (all `successful = true`):
+
+| Step | Tx hash |
+| --- | --- |
+| shield | [`10a42d8f…082c475`](https://stellar.expert/explorer/testnet/tx/10a42d8f8a9e84c79c0a0c4c7c37d36839d8128c4e5dd860a9a117780082c475) |
+| private_swap | [`4da5f1e6…6e65fac8`](https://stellar.expert/explorer/testnet/tx/4da5f1e6d18817ba270d29b817b1854af5ca1fdc57cb97484372401d6e65fac8) |
+| unshield | [`0182ba4b…a692e3c2`](https://stellar.expert/explorer/testnet/tx/0182ba4bd235e72a0ecc8701b21a5ec9aaa82905132e86f03c9c0d3fa692e3c2) |
+
+Pool `CDLT5U3L…`, verifier `CA4HRBVE…`; the withdrawal landed on a fresh,
+friendbot-funded address with no on-chain link to the deposit.
+
 **Depositing (shield):**
 
 1. User picks a secret `ownerSk` and random `rho`, sets `amount`, `asset = COLLATERAL`.
 2. Computes `commitment = Poseidon(0, amount, Poseidon(ownerSk), rho)`.
 3. Generates a `shield` proof that the commitment is well-formed and the amount is in range.
-4. Submits the amount + commitment; the contract verifies the proof and (in the
-   full system) inserts the commitment into the Merkle tree.
+4. Submits the amount + commitment; the contract verifies the proof, pulls the
+   collateral, and inserts the commitment into the on-chain Merkle tree.
 
 **Trading (private swap):**
 
@@ -258,10 +300,13 @@ and transaction hashes are in `contracts/DEPLOYMENTS.md`.
 
 1. User proves membership of the note they want to redeem and reveals its nullifier.
 2. Public inputs bind the withdrawal `amount` and `recipient` address.
-3. The contract verifies and (in the full system) records the nullifier and pays out.
+3. The contract verifies, records the nullifier, and pays the collateral out to the
+   recipient — optionally relayed so the withdrawal's tx source is not the user.
 
 At no point does the ledger learn the user's balance or link these three actions
-to one identity.
+to one identity. We ran exactly this flow on testnet; the withdrawal landed on a
+brand-new address with no on-chain link to the deposit account (§6 table, and
+`contracts/DEPLOYMENTS.md`).
 
 ---
 
@@ -273,13 +318,18 @@ concept**, and it has known, intentional gaps:
 | Area | Current state | Needed for production |
 | --- | --- | --- |
 | Trusted setup | small 2-contributor ceremony | broad public MPC ceremony |
-| `set_vk` authorization | **no auth gate** — anyone can set/rotate keys | admin `require_auth()` |
-| Shielded-pool state | not implemented (verifier is the milestone) | contract for root, commitments, nullifier set |
-| Client / relayer | not implemented | user-facing proving + submission |
+| `set_vk` / admin authorization | minimal PoC gates | proper `require_auth()` review |
+| Shielded-pool state | **built + deployed** (root, commitments, nullifier set, AMM) | audit; batched settlement |
+| Client / relayer | **built** (CLI + NestJS relayer, live E2E) | production hardening + UX |
+| Merkle depth | **8** (256 notes) to fit the CPU budget | higher depth via batching / cheaper hash |
+| `unshield` recipient binding | **not enforced in-contract** (CLI keeps it consistent) | bind `recipient_field` to the payout `Address` |
+| Per-trade size/direction | leaks via the public reserve delta | batched settlement |
 
-The circuits themselves already encode the critical soundness protections
-(range checks, derived leaf index, conservation, AMM invariant). The **verifier is
-the eligibility milestone**, and it is done and deployed.
+The circuits encode the critical soundness protections (range checks, derived leaf
+index, value conservation, AMM invariant). The on-chain verifier was the
+eligibility milestone; the full pool + CLI + relayer + end-to-end testnet flow are
+now built on top of it. The remaining items are production-hardening, not missing
+core pieces.
 
 ---
 
@@ -289,11 +339,14 @@ the eligibility milestone**, and it is done and deployed.
 - [x] Multi-contributor Groth16 ceremony with recorded VK hashes
 - [x] BN254 Groth16 verifier contract, tested in the Soroban env
 - [x] Verifier deployed to testnet; **real proof verified on-chain**
-- [x] Poseidon-in-contract de-risking probe
-- [ ] Shielded-pool state contract (Merkle root, commitment insertion, nullifier set)
-- [ ] Admin auth gate on `set_vk`
-- [ ] Public MPC trusted-setup ceremony
-- [ ] End-to-end client / relayer and UX
+- [x] Lean, no-ark, circom-compatible Poseidon in-contract (~10 KB wasm)
+- [x] **`shielded_pool` state contract** (Merkle root, commitment insertion, nullifier set, AMM) — deployed to testnet
+- [x] **`syzy-shield` CLI** + optional NestJS relayer backend
+- [x] **Full on-chain end-to-end: shield → private_swap → unshield, all `successful = true`**
+- [ ] In-contract `unshield` recipient binding
+- [ ] Batched settlement (hide per-trade size/direction) + higher Merkle depth
+- [ ] Admin `require_auth` hardening
+- [ ] Public MPC trusted-setup ceremony + security audit (mainnet prerequisites)
 
 ---
 
@@ -301,14 +354,18 @@ the eligibility milestone**, and it is done and deployed.
 
 We set out to prove that **private, trustless prediction markets on Stellar are
 possible today** — not with a custodial mixer or a separate privacy chain, but with
-zero-knowledge proofs verified natively on Stellar. We built the full cryptographic
-core: the circuits that define private deposits, withdrawals, and AMM swaps; an
-honest trusted-setup ceremony; the tooling to carry proofs from snarkjs to the
-chain; and — the key result — a **Soroban contract that verifies a real Groth16
-proof on-chain, confirmed on testnet.**
+zero-knowledge proofs verified natively on Stellar. We built the full stack: the
+circuits that define private deposits, withdrawals, and AMM swaps; an honest
+trusted-setup ceremony; the tooling to carry proofs from snarkjs to the chain; a
+Soroban contract that **verifies a real Groth16 proof on-chain**; a stateful
+`shielded_pool` (Merkle tree + nullifiers + AMM); a `syzy-shield` CLI; and an
+optional relayer backend — then ran a **complete `shield → private_swap → unshield`
+flow end-to-end on testnet**, each step gated by an on-chain proof.
 
-The foundation is in place. What remains is composition: wiring the verified proofs
-into a stateful shielded pool and shipping the user-facing experience.
+The core is proven and live on testnet. What remains is production-hardening —
+batched settlement to hide per-trade size, in-contract recipient binding, admin
+auth review, a public MPC ceremony, and a security audit — all gating any mainnet
+deployment.
 
 ---
 

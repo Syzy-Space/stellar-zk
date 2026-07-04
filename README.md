@@ -27,6 +27,10 @@ market on Stellar **mainnet**. This repo is the **testnet proof-of-concept** of
 that layer — see [Honest scope](#honest-scope-this-is-a-hackathon-poc) for
 exactly what is real, mocked, and testnet-only.
 
+📄 **Deeper write-up:** [`DOC.md`](DOC.md) (problem, design, and what we built) ·
+**deployment record:** [`contracts/DEPLOYMENTS.md`](contracts/DEPLOYMENTS.md) ·
+**demo script:** [`demo-video-script.md`](demo-video-script.md).
+
 ### What the ZK is doing here (load-bearing, not decorative)
 
 Every `shield`, `private_swap`, and `unshield` is **gated by an on-chain Groth16
@@ -152,6 +156,9 @@ All circuits use `circom 2.1.9`, circomlib Poseidon, and Merkle depth **8**.
 ## Run it
 
 ```bash
+# 0. clone
+git clone https://github.com/Syzy-Space/stellar-zk.git && cd stellar-zk
+
 # 1. install deps + run the ZK circuit tests (mocha + circom_tester)
 npm install
 npx mocha 'circuits/test/**/*.spec.js' --timeout 300000 --exit
