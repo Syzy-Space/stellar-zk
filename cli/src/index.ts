@@ -93,23 +93,42 @@ function buildTree(): MerkleTree {
 }
 
 /**
- * Rebuild the leaf mirror from on-chain shield events and fix each local note's
- * leafIndex by matching commitments. Run before any spend so Merkle paths
- * authenticate against the real tree (robust to concurrent inserters). Returns
- * the leaf-commitment list (contiguous prefix of shield leaves).
+ * Merge on-chain shield events into the local leaf mirror WITHOUT ever shrinking
+ * it, and fix each local note's leafIndex by matching commitments. Run before any
+ * spend so Merkle paths authenticate against the real tree.
+ *
+ * IMPORTANT: private_swap inserts two leaves (out + change) whose commitments are
+ * NOT emitted in any contract event (the privswap event publishes only
+ * (asset_out, new_root)). So the local append-ordered mirror (leaves.json) is the
+ * ONLY record of swap leaves. This sync therefore MERGES shield leaves the mirror
+ * is missing (filling by index) but PRESERVES every locally-appended leaf at
+ * higher indices — it never truncates or drops a locally-known leaf.
+ *
+ * Returns the resulting (possibly extended) local leaf mirror.
  */
 async function syncLeavesAndNotes(): Promise<string[]> {
   const shieldLeaves = await scanShieldLeaves();
-  const leaves: string[] = [];
+
+  // Start from the authoritative local mirror; overlay shield leaves by index
+  // only where the mirror is missing a leaf. Never overwrite a locally-known
+  // leaf (which may be a swap leaf invisible to events) with a shorter view.
+  const merged: string[] = loadLeaves().slice();
   for (const { index, commitment } of shieldLeaves) {
-    leaves[index] = BigInt("0x" + commitment).toString();
+    const dec = BigInt("0x" + commitment).toString();
+    if (merged[index] === undefined) merged[index] = dec;
   }
+  // Persist only if we filled gaps or extended the mirror (never shrink it).
   const contiguous: string[] = [];
-  for (let i = 0; i < leaves.length; i++) {
-    if (leaves[i] === undefined) break;
-    contiguous.push(leaves[i]);
+  for (let i = 0; i < merged.length; i++) {
+    if (merged[i] === undefined) break;
+    contiguous.push(merged[i]);
   }
-  if (contiguous.length > 0) saveLeaves(contiguous);
+  if (contiguous.length >= loadLeaves().length && contiguous.length > 0) {
+    saveLeaves(contiguous);
+  }
+
+  // Fix a note's leafIndex only when a shield event reveals its true index; do
+  // not clobber swap-note indices (their commitments won't be in shieldLeaves).
   const notes = loadNotes();
   let changed = false;
   for (const n of notes) {
@@ -120,7 +139,7 @@ async function syncLeavesAndNotes(): Promise<string[]> {
     }
   }
   if (changed) saveNotes(notes);
-  return contiguous;
+  return contiguous.length > 0 ? contiguous : merged;
 }
 
 const ZERO32 = "00".repeat(32);
@@ -234,24 +253,31 @@ program
       scanShieldLeaves(),
     ]);
 
-    // Rebuild the ordered leaf list from on-chain shield events. This recovers
-    // the TRUE leaf indices even when other clients also inserted. (private_swap
-    // leaves aren't in events — a documented PoC limitation.)
-    if (shieldLeaves.length > 0) {
-      const leaves: string[] = [];
+    // Merge on-chain shield events into the local leaf mirror WITHOUT shrinking
+    // it. private_swap leaves (out + change) are NOT emitted in any event, so the
+    // local append-ordered mirror is the ONLY record of them — we must preserve
+    // it. We overlay shield leaves by index only where the mirror has a gap, then
+    // persist the contiguous prefix (which is >= the current mirror length).
+    {
+      const before = loadLeaves();
+      const merged: string[] = before.slice();
       for (const { index, commitment } of shieldLeaves) {
-        // commitment hex -> decimal to match the local scheme.
-        leaves[index] = BigInt("0x" + commitment).toString();
+        const dec = BigInt("0x" + commitment).toString();
+        if (merged[index] === undefined) merged[index] = dec;
       }
-      // Only persist a contiguous prefix (a gap means a swap leaf we can't see).
       const contiguous: string[] = [];
-      for (let i = 0; i < leaves.length; i++) {
-        if (leaves[i] === undefined) break;
-        contiguous.push(leaves[i]);
+      for (let i = 0; i < merged.length; i++) {
+        if (merged[i] === undefined) break;
+        contiguous.push(merged[i]);
       }
-      saveLeaves(contiguous);
+      // Never shrink the mirror: only persist if we extended/filled it.
+      if (contiguous.length >= before.length && contiguous.length > 0) {
+        saveLeaves(contiguous);
+      }
 
-      // Fix each local note's leafIndex by matching its commitment.
+      // Fix each local note's leafIndex by matching its commitment against the
+      // shield leaves. Swap-note commitments won't appear here, so their locally
+      // recorded indices (from appendLeaf) are left untouched.
       const notes = loadNotes();
       let fixed = 0;
       for (const n of notes) {
@@ -263,7 +289,8 @@ program
       }
       if (fixed > 0) saveNotes(notes);
       console.log(
-        `synced ${contiguous.length} shield leaf(s) from events; fixed ${fixed} note index(es)`
+        `synced: local mirror ${before.length} -> ${loadLeaves().length} leaf(s) ` +
+          `(${shieldLeaves.length} shield event leaf(s) on chain); fixed ${fixed} note index(es)`
       );
     }
 
