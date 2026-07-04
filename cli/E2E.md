@@ -9,17 +9,24 @@ has **no on-chain link** to the deposit account.
 
 ## The three transactions (2026-07-04)
 
+Re-running the flow deploys a **fresh** depth-8 pool at the top of `npm run e2e`
+(the CLI reconstructs only its own leaves; `private_swap` leaves aren't in
+events, so it cannot re-run against a dirtied tree). Latest passing run:
+
 | Step | Tx hash | Stellar Expert | Status |
 | --- | --- | --- | --- |
-| **shield** (0.1 XLM → note) | `10a42d8f8a9e84c79c0a0c4c7c37d36839d8128c4e5dd860a9a117780082c475` | https://stellar.expert/explorer/testnet/tx/10a42d8f8a9e84c79c0a0c4c7c37d36839d8128c4e5dd860a9a117780082c475 | SUCCESS |
-| **private_swap** (YES) | `4da5f1e6d18817ba270d29b817b1854af5ca1fdc57cb97484372401d6e65fac8` | https://stellar.expert/explorer/testnet/tx/4da5f1e6d18817ba270d29b817b1854af5ca1fdc57cb97484372401d6e65fac8 | SUCCESS |
-| **unshield** (→ fresh addr) | `0182ba4bd235e72a0ecc8701b21a5ec9aaa82905132e86f03c9c0d3fa692e3c2` | https://stellar.expert/explorer/testnet/tx/0182ba4bd235e72a0ecc8701b21a5ec9aaa82905132e86f03c9c0d3fa692e3c2 | SUCCESS |
+| **shield** (0.1 XLM → note) | `ca9dbb2e51c63f86796b8caa0cdcb08529413f88be8e73a108d01d615a6a9de4` | https://stellar.expert/explorer/testnet/tx/ca9dbb2e51c63f86796b8caa0cdcb08529413f88be8e73a108d01d615a6a9de4 | SUCCESS |
+| **private_swap** (YES) | `39c960e2776990552817951430b848bd217a12134adcdd1c4266c32791c6437d` | https://stellar.expert/explorer/testnet/tx/39c960e2776990552817951430b848bd217a12134adcdd1c4266c32791c6437d | SUCCESS |
+| **unshield** (→ fresh addr) | `3ae20da756e40385dc394fc929cd4c19a850bc2f1d9dd1413e3aebbaf8a5c2a0` | https://stellar.expert/explorer/testnet/tx/3ae20da756e40385dc394fc929cd4c19a850bc2f1d9dd1413e3aebbaf8a5c2a0 | SUCCESS |
+
+All three confirmed `successful = true` on Horizon (ledgers 3423101 / 3423104 /
+3423108).
 
 ## Contracts
 
 | Field | Value |
 | --- | --- |
-| Pool (depth-8) | `CDLT5U3LIA2JPFDYC5AYMZGEAPET3TMQDN5UWA26ER5EVRBKPJDCY2MA` |
+| Pool (depth-8, this run) | `CCI24SZY3JQ46AOKZ6LYX2SGUGXILEZD74POKWE7DCO4NV3FYBYNIMWB` |
 | Verifier | `CA4HRBVEYSQDVVRRQAVVTKMRDJLM7WFRF7ZWV6Z6GBT4KNOSCNIYUU7X` |
 | XLM SAC (collateral) | `CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC` |
 
@@ -27,8 +34,8 @@ has **no on-chain link** to the deposit account.
 
 | Account | Address | Note |
 | --- | --- | --- |
-| **Deposit** (shield source) | `GCTFKIEFI4HTCLPTNSE2C7LZT2A47SARD4UWXF7PW7PUE33GJB4KJQYC` | funded the 0.1 XLM shield |
-| **Fresh withdrawal** (unshield recipient) | `GBMB355KG5ILPOLTBG7VRDDBUULBJLOJA37UFOSAGLRW4G2QFCINDNTB` | received the 0.075 XLM change payout |
+| **Deposit** (shield source) | `GAOBLW7NJQ7BAMJDWE6MFWT5G5U72OHONNIYDDZOLJFOCCBZDDOQTDS3` | funded the 0.1 XLM shield |
+| **Fresh withdrawal** (unshield recipient) | `GALPMFVTAJLRPJFNTIOBMSXMLCHBAUTFKA2ANDZB6ARIMZVX5GIKZU5V` | received the 0.075 XLM change payout |
 
 The deposit and withdrawal accounts share **no transaction, signature, or
 memo**. The link between them exists only inside the shielded pool as spent
@@ -69,24 +76,27 @@ the identical value into both the proof and the contract call, so the two agree.
 
 ## How sync works (events, with a local mirror)
 
-`sync` reconstructs the leaf order from the pool's **`shield` contract events**
-(`getEvents` over RPC), rebuilds the depth-8 Merkle tree, and fixes each local
-note's true `leafIndex` by matching recomputed commitments. Merkle paths for
-spends authenticate against this tree; on every run the local root matched the
-on-chain `root()` exactly. **PoC limitation:** `private_swap` output leaves are
-not emitted as shield events, so between a swap and the next shield the leaf
-mirror is maintained locally (append-in-submission-order); this is sufficient
-because only our client transacts in the demo. The encrypted note store
-(`cli/src/notes.ts`, AES-256-GCM) additionally implements commitment-list-based
-`sync`/`treeAndPath` and is unit-tested.
+`sync` reads the pool's **`shield` contract events** (`getEvents` over RPC) and
+**MERGES** any missing shield leaves into the local leaf mirror by index, then
+rebuilds the depth-8 Merkle tree and fixes each local note's true `leafIndex` by
+matching recomputed commitments. Crucially, sync is **non-destructive**: it never
+shrinks or truncates the mirror. **This matters because `private_swap` output
+leaves (out + change) are NOT emitted in any event** — the privswap event
+publishes only `(asset_out, new_root)`. So the local append-ordered mirror is the
+ONLY record of swap leaves; an earlier version called `saveLeaves()` with the
+shield-only prefix and DESTROYED those swap leaves, breaking the Merkle path for
+the change/position notes on the second `sync`. Now sync preserves them. On every
+step of the passing run the local root matched the on-chain `root()` exactly
+(including after the swap, when the mirror held 3 leaves but events reported 0).
+The encrypted note store (`cli/src/notes.ts`, AES-256-GCM) additionally
+implements commitment-list-based `sync`/`treeAndPath` and is unit-tested.
 
 ## Reproduce
 
 ```
-# 1. Deploy a fresh depth-8 pool + wire all three VKs (shield/unshield/privswap):
-bash contracts/scripts/deploy-pool-testnet.sh
-# 2. Point cli/src/config.ts SYZY_POOL_ID at the new pool id.
-# 3. Run the full flow (prints the three tx hashes + links):
+# `npm run e2e` deploys a FRESH depth-8 pool itself (wiring all three VKs and
+# seeding 1e6/1e6 reserves) and points the CLI at it — a fresh pool is REQUIRED
+# to re-run the flow because the CLI reconstructs only its own leaves.
 cd cli && npm run e2e     # == bash scripts/e2e-testnet.sh
 ```
 

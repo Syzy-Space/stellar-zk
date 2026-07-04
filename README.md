@@ -192,9 +192,15 @@ node dist/index.js unshield --amount 750000 --to new   # fresh, unlinked recipie
 ```
 
 The pool/verifier/SAC defaults in [`cli/src/config.ts`](cli/src/config.ts) point
-at the live canonical deployment above, so steps 4–5 also work against the
-already-deployed pool without redeploying. `npm run e2e` uses `npx tsx` and needs
-no separate build step. Full walk-through: [`cli/E2E.md`](cli/E2E.md).
+at a live deployment, so the individual steps above work against it for a *first*
+run. **Re-running the full flow needs a FRESH pool**, because the CLI
+reconstructs only its OWN leaves: `private_swap` output leaves are never emitted
+in any contract event, so the local append-ordered mirror is the sole record of
+them and the client cannot rebuild another run's dirtied tree (documented PoC
+limitation). For that reason `npm run e2e` deploys a fresh depth-8 pool at the
+top of each run (via `contracts/scripts/deploy-pool-testnet.sh`) and points the
+CLI at it. `npm run e2e` uses `npx tsx` and needs no separate build step. Full
+walk-through: [`cli/E2E.md`](cli/E2E.md).
 
 Proof generation runs **locally**: the note secrets and owner keys never leave
 the client. Submission defaults to direct testnet submit; an **optional relayer /

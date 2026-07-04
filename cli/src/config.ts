@@ -16,8 +16,12 @@ export const POOL_CONTRACT_ID = env(
   "SYZY_POOL_ID",
   // Redeployed 2026-07-04 (depth-8): assetOut fix + cached zeros + depth-8 tree
   // so private_swap's two on-chain inserts + verify fit the Soroban CPU budget;
-  // privswap VK wired under the correct symbol.
-  "CDLT5U3LIA2JPFDYC5AYMZGEAPET3TMQDN5UWA26ER5EVRBKPJDCY2MA"
+  // privswap VK wired under the correct symbol. This is the pool from the last
+  // passing E2E (shield/swap/unshield) — usable for hand-driven steps. NOTE:
+  // `npm run e2e` ignores this default and deploys a FRESH pool each run (the CLI
+  // reconstructs only its OWN leaves, since private_swap leaves aren't emitted in
+  // events, so it cannot re-run against a dirty pool).
+  "CCI24SZY3JQ46AOKZ6LYX2SGUGXILEZD74POKWE7DCO4NV3FYBYNIMWB"
 );
 export const VERIFIER_CONTRACT_ID = env(
   "SYZY_VERIFIER_ID",

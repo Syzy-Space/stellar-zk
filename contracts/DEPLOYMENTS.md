@@ -1,13 +1,17 @@
 # Syzy Shielded — Contract Deployments (testnet)
 
-> **Canonical, live deployment.** There is exactly ONE live pool. Earlier pools
-> deployed during bring-up are listed at the bottom as **SUPERSEDED** — do not
-> use them. `cli/src/config.ts`, `cli/E2E.md`, and this file all reference the
-> canonical pool `CDLT5U3LIA2JPFDYC5AYMZGEAPET3TMQDN5UWA26ER5EVRBKPJDCY2MA`.
+> **Canonical, live deployment.** `cli/src/config.ts`, `cli/E2E.md`, and this
+> file reference the canonical pool
+> `CCI24SZY3JQ46AOKZ6LYX2SGUGXILEZD74POKWE7DCO4NV3FYBYNIMWB` — the pool from the
+> last passing E2E, valid for hand-driven steps. **Note:** `npm run e2e` deploys
+> a NEW fresh pool every run and points the CLI at it, because the CLI
+> reconstructs only its own leaves (private_swap leaves aren't emitted in events)
+> and so cannot re-run against a dirtied tree. Earlier pools are listed at the
+> bottom as **SUPERSEDED** — do not use them.
 
 | Role | Contract ID |
 | --- | --- |
-| **Pool** (`shielded_pool`, depth-8) | `CDLT5U3LIA2JPFDYC5AYMZGEAPET3TMQDN5UWA26ER5EVRBKPJDCY2MA` |
+| **Pool** (`shielded_pool`, depth-8) | `CCI24SZY3JQ46AOKZ6LYX2SGUGXILEZD74POKWE7DCO4NV3FYBYNIMWB` |
 | **Verifier** (`groth16_verifier`) | `CA4HRBVEYSQDVVRRQAVVTKMRDJLM7WFRF7ZWV6Z6GBT4KNOSCNIYUU7X` |
 | **Collateral SAC** (XLM) | `CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC` |
 | Deployer (`shielded-deployer`) | `GCRBJRJPSUWLYL4LNOD7UXFM5I3QKR5HE3PTKDTOFTSEFCLBQADMFV2L` |
@@ -16,7 +20,7 @@ Live reserves after the E2E swap (queried on-chain): `reserves() = [800000, 1250
 (yes = 800000, no = 1250000).
 
 Stellar Expert:
-- pool:     https://stellar.expert/explorer/testnet/contract/CDLT5U3LIA2JPFDYC5AYMZGEAPET3TMQDN5UWA26ER5EVRBKPJDCY2MA
+- pool:     https://stellar.expert/explorer/testnet/contract/CCI24SZY3JQ46AOKZ6LYX2SGUGXILEZD74POKWE7DCO4NV3FYBYNIMWB
 - verifier: https://stellar.expert/explorer/testnet/contract/CA4HRBVEYSQDVVRRQAVVTKMRDJLM7WFRF7ZWV6Z6GBT4KNOSCNIYUU7X
 
 ---
@@ -31,17 +35,17 @@ on-chain by the verifier contract.
 
 | Field | Value |
 | --- | --- |
-| Pool (depth-8) | `CDLT5U3LIA2JPFDYC5AYMZGEAPET3TMQDN5UWA26ER5EVRBKPJDCY2MA` |
+| Pool (depth-8, this run) | `CCI24SZY3JQ46AOKZ6LYX2SGUGXILEZD74POKWE7DCO4NV3FYBYNIMWB` |
 | Verifier | `CA4HRBVEYSQDVVRRQAVVTKMRDJLM7WFRF7ZWV6Z6GBT4KNOSCNIYUU7X` |
 | XLM SAC (collateral) | `CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC` |
-| Deposit account | `GCTFKIEFI4HTCLPTNSE2C7LZT2A47SARD4UWXF7PW7PUE33GJB4KJQYC` |
-| Fresh (unlinked) withdrawal account | `GBMB355KG5ILPOLTBG7VRDDBUULBJLOJA37UFOSAGLRW4G2QFCINDNTB` |
+| Deposit account | `GAOBLW7NJQ7BAMJDWE6MFWT5G5U72OHONNIYDDZOLJFOCCBZDDOQTDS3` |
+| Fresh (unlinked) withdrawal account | `GALPMFVTAJLRPJFNTIOBMSXMLCHBAUTFKA2ANDZB6ARIMZVX5GIKZU5V` |
 
 | Step | Entrypoint | Tx hash | Stellar Expert |
 | --- | --- | --- | --- |
-| 1. shield | `shield` | `10a42d8f8a9e84c79c0a0c4c7c37d36839d8128c4e5dd860a9a117780082c475` | https://stellar.expert/explorer/testnet/tx/10a42d8f8a9e84c79c0a0c4c7c37d36839d8128c4e5dd860a9a117780082c475 |
-| 2. private_swap | `private_swap` | `4da5f1e6d18817ba270d29b817b1854af5ca1fdc57cb97484372401d6e65fac8` | https://stellar.expert/explorer/testnet/tx/4da5f1e6d18817ba270d29b817b1854af5ca1fdc57cb97484372401d6e65fac8 |
-| 3. unshield | `unshield` | `0182ba4bd235e72a0ecc8701b21a5ec9aaa82905132e86f03c9c0d3fa692e3c2` | https://stellar.expert/explorer/testnet/tx/0182ba4bd235e72a0ecc8701b21a5ec9aaa82905132e86f03c9c0d3fa692e3c2 |
+| 1. shield | `shield` | `ca9dbb2e51c63f86796b8caa0cdcb08529413f88be8e73a108d01d615a6a9de4` | https://stellar.expert/explorer/testnet/tx/ca9dbb2e51c63f86796b8caa0cdcb08529413f88be8e73a108d01d615a6a9de4 |
+| 2. private_swap | `private_swap` | `39c960e2776990552817951430b848bd217a12134adcdd1c4266c32791c6437d` | https://stellar.expert/explorer/testnet/tx/39c960e2776990552817951430b848bd217a12134adcdd1c4266c32791c6437d |
+| 3. unshield | `unshield` | `3ae20da756e40385dc394fc929cd4c19a850bc2f1d9dd1413e3aebbaf8a5c2a0` | https://stellar.expert/explorer/testnet/tx/3ae20da756e40385dc394fc929cd4c19a850bc2f1d9dd1413e3aebbaf8a5c2a0 |
 
 ### AMM constant product (integer-exact)
 
@@ -64,25 +68,33 @@ note-scheme id, YES=1 / NO=2).
 
 ### Unlinkability
 
-The `unshield` recipient `GBMB355KG5ILPOLTBG7VRDDBUULBJLOJA37UFOSAGLRW4G2QFCINDNTB`
+The `unshield` recipient `GALPMFVTAJLRPJFNTIOBMSXMLCHBAUTFKA2ANDZB6ARIMZVX5GIKZU5V`
 is a brand-new address funded by SDF **friendbot**, not by the deposit account.
 The pool paid the `750_000` collateral to it from the pool's own balance, gated
 only by the note's nullifier + Merkle proof. There is **no on-chain payment or
-account-creation link** between the deposit account `GCTFKIEF…` and the
-withdrawal address `GBMB355K…`; the shielded pool is the only common
+account-creation link** between the deposit account `GAOBLW7N…` and the
+withdrawal address `GALPMFVT…`; the shielded pool is the only common
 counterparty. Post-flow recipient balance: `10000.0750000` XLM (10000 friendbot +
 0.075 unshielded change). Full write-up: `cli/E2E.md`.
 
 ### Reproduce
 
 ```
+# Full automated flow — deploys a FRESH pool itself, then runs the 3 steps:
+cd cli && npm run e2e
+
+# Or drive it by hand against a fresh pool:
 bash contracts/scripts/deploy-pool-testnet.sh   # ONE fresh depth-8 pool + wire + seed
-export SYZY_POOL_ID=<pool-id>                    # or use the config.ts default
+export SYZY_POOL_ID=<pool-id>                    # REQUIRED to re-run: the CLI can only
+                                                 # rebuild ITS OWN leaves (swap leaves
+                                                 # aren't in events), so re-running needs
+                                                 # a fresh, empty pool
 syzy-shield init
 syzy-shield shield  --amount 1000000
 syzy-shield sync
 syzy-shield swap    --side yes --amount 250000
-syzy-shield unshield --to new
+syzy-shield sync
+syzy-shield unshield --amount 750000 --to new
 ```
 
 ---
@@ -136,3 +148,4 @@ to remove ambiguity; the canonical pool above is the single live instance.
 | --- | --- |
 | `CCGEYRCEB27GJ7PBMA4S7DJ3C2NMML4ZYOZR7HQQS3R376ZZI5AMVG2S` | First depth-8 deploy; `shield` was deferred, never carried the finished CLI E2E. |
 | `CCSJFHFYS67SACE3HPEMZPQDLR3IXH76322VCFDTVML4OD5VTGE3PF5Y` | Earlier E2E run before final bring-up fixes; replaced by the canonical pool. |
+| `CDLT5U3LIA2JPFDYC5AYMZGEAPET3TMQDN5UWA26ER5EVRBKPJDCY2MA` | Prior canonical pool; its E2E ran before the non-destructive-sync fix. Dirtied by that run's leaves, so it can't be re-used for a fresh flow. Replaced by `CCI24SZY…`. |
