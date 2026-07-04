@@ -21,6 +21,7 @@
 set -euo pipefail
 
 CLI_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+REPO_ROOT="$(cd "$CLI_DIR/.." && pwd)"
 cd "$CLI_DIR"
 
 # Fresh wallet/notes for a clean demo run.
@@ -30,10 +31,37 @@ if [ -d "$STORE" ]; then
   rm -f "$STORE"/wallet.json "$STORE"/notes.json "$STORE"/leaves.json
 fi
 
+# --- Deploy a FRESH depth-8 pool ------------------------------------------- #
+# Re-running the flow requires an EMPTY tree with 1e6/1e6 reserves: the CLI is
+# the sole inserter and reconstructs only its OWN leaves (private_swap leaves are
+# not emitted in any event), so it cannot rebuild a dirty pool's tree. A fresh
+# pool also guarantees the hardcoded amountIn=250000 divides k exactly.
+echo "============================================================"
+echo " Deploying a FRESH shielded pool for this E2E run"
+echo "============================================================"
+DEPLOY_LOG="$(mktemp)"
+bash "$REPO_ROOT/contracts/scripts/deploy-pool-testnet.sh" 2>&1 | tee "$DEPLOY_LOG"
+# Parse the final "DONE. Pool=... Verifier=... XLM_SAC=..." line.
+DONE_LINE="$(grep '^DONE\. Pool=' "$DEPLOY_LOG" | tail -1)"
+FRESH_POOL_ID="$(echo "$DONE_LINE" | sed -n 's/.*Pool=\([A-Z0-9]*\).*/\1/p')"
+FRESH_VERIFIER_ID="$(echo "$DONE_LINE" | sed -n 's/.*Verifier=\([A-Z0-9]*\).*/\1/p')"
+FRESH_SAC_ID="$(echo "$DONE_LINE" | sed -n 's/.*XLM_SAC=\([A-Z0-9]*\).*/\1/p')"
+rm -f "$DEPLOY_LOG"
+if [ -z "$FRESH_POOL_ID" ]; then
+  echo "ERROR: could not parse fresh pool id from deploy output" >&2
+  exit 1
+fi
+export SYZY_POOL_ID="$FRESH_POOL_ID"
+export SYZY_VERIFIER_ID="$FRESH_VERIFIER_ID"
+export SYZY_COLLATERAL_ID="$FRESH_SAC_ID"
+
 run() { echo; echo "\$ syzy-shield $*"; npx tsx src/index.ts "$@"; }
 
 echo "============================================================"
 echo " Syzy Shielded — testnet E2E: shield -> swap -> unshield"
+echo "  FRESH POOL:     $SYZY_POOL_ID"
+echo "  VERIFIER:       $SYZY_VERIFIER_ID"
+echo "  COLLATERAL SAC: $SYZY_COLLATERAL_ID"
 echo "============================================================"
 
 # 1) init (fresh, friendbot-funded)
